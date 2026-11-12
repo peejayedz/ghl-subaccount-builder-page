@@ -7,6 +7,7 @@ v1.0.0 is released at deploy (Step 4); until then it is marked unreleased.
 
 - Note: for now the builder runs from PJ's personal GitHub account (peejayedz) because the LFMP-Rockstars GitHub billing is blocked. This is temporary: it moves back to LFMP-Rockstars once billing is fixed, and everyone will then make a new token.
 - Changed: the "Create the token" steps name the account that owns the builder repo, and the token only needs the builder repo.
+- New: the page is published (temporarily) at https://peejayedz.github.io/ghl-subaccount-builder-page/ and locked with the builder password.
 
 - New: password-locked page (same lock and look as the LeadPro KPI admin page) with an encrypted GitHub token and a Connect check that names any missing permission.
 - New: Sub-accounts tab: search, status / KPI / review-page badges, Open in GHL, Copy location ID, View details, Refresh status, and an "In progress or needs attention" list.
