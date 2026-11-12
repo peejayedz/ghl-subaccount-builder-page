@@ -5,9 +5,13 @@ v1.0.0 is released at deploy (Step 4); until then it is marked unreleased.
 
 ## [1.0.0] - unreleased
 
+- New (Phase 2 test, not used by the page yet): a sign-in page for the private GHL app "LFMP LeadPro Connector" at https://peejayedz.github.io/ghl-subaccount-builder-page/oauth/. After the app is installed it shows the one-time code to copy into Terminal, then clears it from the address bar. It stores nothing and sends nothing.
+- New (internal): `scripts/app/connect.mjs` swaps that code for the agency tokens and keeps them in the Mac Keychain (typing hidden, nothing printed), then checks read-only where the app is installed. Its GHL helper may only read, swap the code / refresh, and mint sub-account tokens.
+
 - Note: for now the builder runs from PJ's personal GitHub account (peejayedz) because the LFMP-Rockstars GitHub billing is blocked. This is temporary: it moves back to LFMP-Rockstars once billing is fixed, and everyone will then make a new token.
 - Changed: the "Create the token" steps name the account that owns the builder repo, and the token only needs the builder repo.
 - New: the page is published (temporarily) at https://peejayedz.github.io/ghl-subaccount-builder-page/ and locked with the builder password.
+- Tested live: the first real sub-account was created from the page (13 Nov 2026), with the snapshot loaded and the record saved.
 
 - New: password-locked page (same lock and look as the LeadPro KPI admin page) with an encrypted GitHub token and a Connect check that names any missing permission.
 - New: Sub-accounts tab: search, status / KPI / review-page badges, Open in GHL, Copy location ID, View details, Refresh status, and an "In progress or needs attention" list.
