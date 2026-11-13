@@ -288,8 +288,35 @@ a.lk:hover{background:var(--hover);text-decoration:none;border-color:var(--sel-l
 .preview dd .chip{margin:0 4px 4px 0}
 .spin{width:10px;height:10px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin .9s linear infinite;margin-right:6px;display:inline-block}
 
+/* KPI dashboard card (done panel + record details) */
+.kpicard .btnrow{margin-top:0}
+.kpihead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.kpihead h4{margin:0;font-size:14px;color:var(--ink)}
+.kpihead .hint{margin-left:auto}
+.kpicard>.hint{margin:0}
+.steps.kpisteps{margin:0}
+.kpisteps .step.ok{animation:none} .kpisteps .step.ok.just{animation:pop .35s ease}   /* the card redraws on every check: only a newly ticked step flashes */
+.steps.kpisteps .step{padding:9px 0}
+.passbox{border:1px solid var(--sel-line);background:var(--sel-bg);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.passbox .passlabel{margin:0;font-size:13.5px;color:var(--sel-ink)}
+.passbox .hint{margin:0;color:var(--ink-2)}
+.passbox .btn.sm{align-self:flex-start}
+.copyrow{display:flex;gap:8px;align-items:center;min-width:0}
+.copyrow input{flex:1 1 auto;min-width:0}
+.copyrow .btn{flex:0 0 auto;min-height:40px}
+.passval{flex:1 1 auto;min-width:0;font:600 16px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);background:var(--field);border:1px solid var(--rule);border-radius:8px;padding:9px 11px;overflow-wrap:anywhere;user-select:all;-webkit-user-select:all}
+.kpilink{display:flex;gap:8px;flex-wrap:wrap;margin:0}
+.menuhelp{border:1px solid var(--rule);border-radius:8px;padding:10px 12px}
+.menuhelp summary{cursor:pointer;font-weight:600;font-size:13.5px}
+.menuhelp[open] summary{margin-bottom:10px}
+.menuhelp .clicks{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:var(--ink-2);display:flex;flex-direction:column;gap:4px}
+.kpicard .errbox a,.kpicard .warnbox a{color:inherit;text-decoration:underline}
+
 /* phones */
 @media (max-width:700px){
+  .kpihead .hint{margin-left:0;flex-basis:100%}
+  .copyrow{flex-wrap:wrap}
+  .copyrow .btn{flex:1 1 auto}
   .linklist li{grid-template-columns:18px minmax(0,1fr)}
   .linklist .lkval,.linklist .lkacts,.lkedit{grid-column:2/-1}
   .lkacts{justify-content:flex-start}

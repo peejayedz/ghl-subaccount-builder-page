@@ -3,6 +3,7 @@
 // repo through the GitHub API with the user's token; nothing private is fetched from this public site.
 import * as S from './shared.js';
 import * as W from './webforms.js';
+import * as K from './kpi.js';
 
 const CFG = window.BUILDER_CONFIG;
 const API = CFG.api.replace(/\/$/, '');
@@ -136,6 +137,9 @@ const PERMS = [
   { key: 'contentsWrite', label: 'Contents: Write', fix: 'Set Contents to "Read and write".' },
   { key: 'actionsRead', label: 'Actions: Read', fix: 'Set Actions to "Read and write".' },
   { key: 'actionsWrite', label: 'Actions: Write (start the create workflow)', fix: 'Set Actions to "Read and write".' },
+  // KPI dashboard setup (Phase 2). Not needed to create sub-accounts, so a missing one never blocks Connect.
+  { key: 'kpiSecrets', optional: true, label: 'LeadPro KPI repo: Secrets read/write (KPI setup)', fix: 'Add the repository leadpro-kpi to the token, with Secrets "Read and write".' },
+  { key: 'kpiActions', optional: true, label: 'LeadPro KPI repo: Actions write (KPI setup)', fix: 'Add the repository leadpro-kpi to the token, with Actions "Read and write".' },
 ];
 async function rawFetch(method, path, body) {
   return fetch(API + path, { method, cache: 'no-store', headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${ghToken}`, 'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -152,6 +156,11 @@ export async function connectCheck() {
   res.actionsWrite = aw.status === 422 ? 'yes' : aw.status === 403 ? 'no' : 'maybe';
   const cw = await rawFetch('POST', `${R}/git/refs`, { ref: 'refs/heads/connect-check-probe', sha: '0000000000000000000000000000000000000000' });
   res.contentsWrite = cw.status === 422 ? 'yes' : cw.status === 403 ? 'no' : 'maybe';
+  const KR = `/repos/${CFG.kpiRepo || 'peejayedz/leadpro-kpi'}`;
+  const ks = await rawFetch('GET', `${KR}/actions/secrets/public-key`);   // needs Secrets: Read (write comes with it in the token settings)
+  res.kpiSecrets = ks.ok ? 'yes' : [403, 404].includes(ks.status) ? 'no' : 'maybe';
+  const ka = await rawFetch('POST', `${KR}/actions/workflows/new-firm.yml/dispatches`, { ref: 'connect-check-no-such-branch', inputs: {} });
+  res.kpiActions = ka.status === 422 ? 'yes' : [403, 404].includes(ka.status) ? 'no' : 'maybe';
   return res;
 }
 function paintPerms(res) {
@@ -166,7 +175,7 @@ $('tokenForm').addEventListener('submit', async e => {
     ghToken = t;
     const res = await connectCheck();
     paintPerms(res);
-    const missing = PERMS.filter(p => res[p.key] === 'no').map(p => p.label.split(' (')[0]);
+    const missing = PERMS.filter(p => !p.optional && res[p.key] === 'no').map(p => p.label.split(' (')[0]);
     if (missing.length) { ghToken = null; $('tokenErr').textContent = `Missing: ${missing.join(', ')}. Edit the token on GitHub (the token itself stays the same) and press Connect again.`; return; }
     await saveToken(t); $('tokenIn').value = '';
     await openApp();
@@ -300,7 +309,7 @@ function renderList() {
   $('q').addEventListener('input', paintList);
 }
 function statusChip(rec) { const s = S.RECORD_STATUS[rec.status] || { label: rec.status || 'Unknown', tone: '' }; return `<span class="chip ${s.tone}" data-chip="status"><span class="dot"></span>${esc(s.label)}${rec.status === 'snapshot_loading' && rec.snapshotProgress?.percent ? ` · ${rec.snapshotProgress.percent}%` : ''}</span>`; }
-const kpiChip = r => `<span class="chip ${r.kpiRequested ? 'info' : ''}" data-chip="kpi">KPI: ${r.kpiRequested ? 'Requested — set up in Phase 2' : 'Not requested'}</span>`;
+const kpiChip = r => { const s = K.kpiState(r); return `<span class="chip ${s.tone}" data-chip="kpi">KPI: ${esc(s.label)}</span>`; };
 const reviewChip = r => `<span class="chip ${r.reviewRequested ? 'info' : ''}" data-chip="review">Review page: ${r.reviewRequested ? 'Requested — set up later' : 'Not requested'}</span>`;
 const webformsChip = r => { const s = W.webformsStatus(r); return `<span class="chip ${s.tone}" data-chip="webforms">Webforms: ${esc(s.label)}</span>`; };
 // Compact row of link buttons: present = opens in a new tab; missing = greyed with what's missing.
@@ -415,10 +424,11 @@ function detailsHtml(r) {
   return `<div class="rv">
     <div class="chips" style="display:flex;gap:6px;flex-wrap:wrap">${statusChip(r)}${kpiChip(r)}${reviewChip(r)}${webformsChip(r)}</div>
     ${linksSection(r)}
+    ${K.kpiCardHtml(r)}
     ${webformsCard(r)}
     <div><h4>Sub-account</h4>${kv([['Location ID', `<span class="mono">${esc(r.locationId)}</span> <button class="linkbtn" type="button" data-act="copyid" data-id="${esc(r.locationId)}">Copy</button>`], ['Open in GHL', `<a href="${esc(r.links?.ghl)}" target="_blank" rel="noopener">${esc(r.links?.ghl)}</a>`], ['Client login', `<a href="${esc(r.links?.clientLogin)}" target="_blank" rel="noopener">${esc(r.links?.clientLogin)}</a>`], ['Snapshot', esc(snapName(r.snapshot?.id, r.snapshot?.name))], ['Snapshot load', sp ? esc(`${sp.percent}% · ${sp.completed} done, ${sp.pending} pending · GHL status "${sp.status}" · checked ${fmtDate(sp.checkedAt)}`) : '']])}</div>
     <div><h4>Business</h4>${kv(f.business)}</div><div><h4>Address</h4>${kv(f.address)}</div><div><h4>Primary contact</h4>${kv(f.contact)}</div>
-    <div><h4>Add-ons</h4>${kv([['KPI dashboard', r.kpiRequested ? `Requested · ${esc(r.practiceArea)}` : 'Not requested'], ['Automation review page', r.reviewRequested ? `Requested · audience “${esc(r.audience)}” · healthcare: ${r.smsHealthcare ? 'yes' : 'no'}` : 'Not requested']])}</div>
+    <div><h4>Add-ons</h4>${kv([['KPI dashboard', `${r.kpiRequested ? `Requested · ${esc(r.practiceArea)}` : 'Not requested'} · ${esc(K.kpiState(r).label)}`], ['Automation review page', r.reviewRequested ? `Requested · audience “${esc(r.audience)}” · healthcare: ${r.smsHealthcare ? 'yes' : 'no'}` : 'Not requested']])}</div>
     <div><h4>Social links</h4>${kv(f.social)}</div><div><h4>Advanced</h4>${kv(f.settings)}</div>
     <div><h4>Internal</h4>${kv([...f.webforms, ['Created by', esc(r.createdBy)], ['Created', `${esc(fmtDate(r.createdAt))} · ${esc(r.createdAtManila)}`], ['Package / notes', esc(r.notes).replace(/\n/g, '<br>')], ['Request ID', `<span class="mono">${esc(r.requestId)}</span>`]])}</div></div>`;
 }
@@ -1015,6 +1025,7 @@ async function showResult(extra = {}) {
       ${still ? '<div class="warnbox">GHL was still loading the snapshot after 15 minutes. The sub-account exists and can be opened. Use <b>Refresh status</b> on the Sub-accounts tab later.</div>' : ''}
       <div class="btnrow"><a class="btn primary big" href="${esc(ghlLink)}" target="_blank" rel="noopener">${ICON.ext} Open in GHL</a><button class="btn big" type="button" data-act="another">${ICON.plus} Create another</button><button class="btn big" type="button" data-act="golist">Back to the list</button></div>
       <div><h4>Sub-account</h4>${kv([['Location ID', `<span class="mono">${esc(f.locationId)}</span> <button class="btn" type="button" data-act="copyid" data-id="${esc(f.locationId)}">${ICON.copy} Copy</button>`], ['Client login link', `<a href="${esc(login)}" target="_blank" rel="noopener">${esc(login)}</a> <button class="btn" type="button" data-act="copytext" data-text="${esc(login)}" data-what="Login link">${ICON.copy} Copy</button>`], ['Snapshot used', esc(rec?.snapshot?.name || run.payload?.snapshotName || '')], ['Time taken', esc(took)]])}</div>
+      ${rec ? K.kpiCardHtml(rec, { where: 'done' }) : ''}
       <div><h4>Business</h4>${kv(fr.business)}</div><div><h4>Address</h4>${kv(fr.address)}</div><div><h4>Primary contact</h4>${kv(fr.contact)}</div>
       <div><h4>Webforms</h4>${kv(fr.webforms)}</div>
       <div><h4>Next steps</h4><ul class="checklist">
@@ -1023,10 +1034,17 @@ async function showResult(extra = {}) {
         <li>Phone number + A2P registration</li>
         <li>Email sending domain</li>
         <li>Connect the calendar</li>
-        ${kpi ? '<li>KPI dashboard <span class="later">· Phase 2 will automate this</span></li>' : ''}
+        ${kpi ? `<li>KPI dashboard <span class="later">· ${still ? 'set it up from the record once the snapshot has loaded' : 'setting up below'}</span></li>` : ''}
         ${rev ? '<li>Automation review page <span class="later">· a later phase will automate this</span></li>' : ''}
       </ul></div>
     </div>`;
+    if (rec) {
+      // The record is needed in memory for the KPI card; then start KPI setup by itself when it was asked
+      // for and the snapshot has loaded (the passphrase is made in this browser, so it must start here).
+      rec.id ||= f.recordPath.replace(/^records\/|\.json$/g, '');
+      const k = state.records.findIndex(x => x.id === rec.id); if (k >= 0) state.records[k] = rec; else state.records.unshift(rec);
+      if (rec.kpiRequested && f.status === 'done' && !rec.kpi?.status) K.startKpi(rec.id, { auto: true });
+    }
     loadRecords().catch(() => {});
   } else {
     const dup = f.status === 'duplicate';
@@ -1110,6 +1128,7 @@ document.addEventListener('click', e => {
   else if (act === 'editlink') { state.editLink = a.dataset.k; paintDetails(); $('lk-in')?.focus(); }
   else if (act === 'canceledit') { state.editLink = null; paintDetails(); }
   else if (act === 'savelink') saveLink(a.dataset.k, a);
+  else if (act.startsWith('kpi')) K.onKpiAct(act, a);
   else if (['wfon', 'wfsave', 'wfpreview', 'wfsend', 'wfuseexisting'].includes(act)) {
     const r = wfRec(state.detailsId); if (!r) return;
     if (act === 'wfpreview') wfPreview(r);
@@ -1141,4 +1160,7 @@ document.addEventListener('input', onCardInput);
 document.addEventListener('change', onCardInput);
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'lk-in') { e.preventDefault(); document.querySelector('[data-act="savelink"]')?.click(); } });
 
+K.initKpi({ gh, saveRecord, record: id => state.records.find(x => x.id === id), esc, ICON, toast, copy, who: () => whoName(), cfg: CFG,
+  newRequestId: () => S.newRequestId(), paintList: () => paintList(), sleep, pollMs: POLL_MS,
+  detailsOpen: () => ($('detBody') ? state.detailsId : null), paintDetails: () => paintDetails() });
 boot();

@@ -6,4 +6,6 @@ window.BUILDER_CONFIG = {
   repo: 'peejayedz/ghl-subaccount-builder',
   branch: 'main',
   api: 'https://api.github.com',
+  // LeadPro KPI dashboards (Phase 2): the page saves a new firm's passphrase there and starts new-firm.yml.
+  kpiRepo: 'peejayedz/leadpro-kpi',
 };
