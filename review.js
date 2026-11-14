@@ -135,6 +135,7 @@ export function generatePackage(tpl, rec, { code, now = new Date(), by = '' } = 
     agency: vals.AGENCY,
     firmName: vals.FIRM_NAME,
     workflows: (tpl.template.workflows || []).map(w => ({ ...w })), // automation id ↔ GHL workflow name (GHL resync)
+    templateHashes: templateHashes(files), // what each automation looked like in the template (resync: did the TEMPLATE change it?)
     carryOver: (tpl.template.carryOver || []).map(c => ({ ...c })),
     checklist: (tpl.template.checklist || []).map(text => ({ text, done: false })), // per-client GHL to-dos before go-live
     generatedAt: now.toISOString(),
@@ -278,6 +279,10 @@ export function editMessage(pkg, id, { subject, text }) {
   else { st.body = `Everyone on your team gets this text:\n\n${text}`; m.text = st.body; }
   const a = out.files.data.automations.find(x => x.id === splitId(id)[0]);
   if (a.source === 'template') a.source = 'customised';
+  // Already published: changed wording = a new review round for THIS automation (once per publish), so the
+  // client re-checks it; other automations keep their version and their approvals.
+  const pubV = out.published?.versions?.[a.id];
+  if (pubV != null && String(a.version) === String(pubV)) a.version = nextVersion(a.version);
   return out;
 }
 
@@ -288,11 +293,17 @@ export function editMessage(pkg, id, { subject, text }) {
 // unchanged ones keep their version, so their approvals stand.
 const AUTO_IGNORE = ['version', 'sent', 'templateVersion', 'source'];
 const autoBody = a => JSON.stringify(Object.fromEntries(Object.entries(a).filter(([k]) => !AUTO_IGNORE.includes(k))));
+// One fingerprint per automation: its data-file content + its messages, as the template generated them.
+export function templateHashes(files) {
+  const msgs = (files.messages.sections || []).flatMap(s => s.msgs || []);
+  return Object.fromEntries((files.data.automations || []).map(a => [a.id, fingerprint(autoBody(a) + JSON.stringify(msgs.filter(m => m.id.startsWith(`${a.id}.`))))]));
+}
 export function templateResync(pkg, tpl, rec, { now = new Date() } = {}) {
   const fresh = generatePackage(tpl, rec, { code: pkg.code, now });
   const published = !!pkg.published;
   const changed = [], customised = [], unchanged = [];
   const freshMsgs = allMessages(fresh);
+  const freshHashes = templateHashes(fresh.files);
   const out = clone(pkg);
   for (const a of out.files.data.automations) {
     const f = fresh.files.data.automations.find(x => x.id === a.id);
@@ -301,13 +312,20 @@ export function templateResync(pkg, tpl, rec, { now = new Date() } = {}) {
     const curMsgs = JSON.stringify(allMessages(pkg).filter(m => m.id.startsWith(`${a.id}.`)));
     const same = autoBody(a) === autoBody(f) && curMsgs === JSON.stringify(freshMsgs.filter(m => m.id.startsWith(`${a.id}.`)));
     if (same) { unchanged.push(a.id); continue; }
-    if (a.source !== 'template') { customised.push({ id: a.id, name: a.name, source: a.source || 'custom' }); continue; }
+    if (a.source !== 'template') {
+      // tailored for this client: never changed. Listed only when the TEMPLATE changed it (when the package knows what it started from).
+      const known = pkg.templateHashes?.[a.id];
+      if (!known || known !== freshHashes[a.id]) customised.push({ id: a.id, name: a.name, source: a.source || 'custom' });
+      continue;
+    }
     const before = allMessages(pkg).filter(m => m.id.startsWith(`${a.id}.`));
     const nMsg = msgIds.filter(id => JSON.stringify(before.find(m => m.id === id)) !== JSON.stringify(freshMsgs.find(m => m.id === id))).length
       + before.filter(m => !msgIds.includes(m.id)).length;
-    changed.push({ id: a.id, name: a.name, messages: nMsg, from: a.version, to: published ? nextVersion(a.version) : a.version });
+    // bump once per publish: only while the version is still the published one (an edit since may have bumped it already)
+    const pv = pkg.published?.versions?.[a.id], to = published && pv != null && String(a.version) === String(pv) ? nextVersion(a.version) : a.version;
+    changed.push({ id: a.id, name: a.name, messages: nMsg, from: a.version, to });
     Object.keys(a).forEach(k => delete a[k]);
-    Object.assign(a, clone(f), { version: published ? nextVersion(pkg.files.data.automations.find(x => x.id === f.id).version) : pkg.files.data.automations.find(x => x.id === f.id).version });
+    Object.assign(a, clone(f), { version: to });
     // the messages file: replace this automation's messages with the fresh ones, in the fresh sections
     for (const sec of out.files.messages.sections) sec.msgs = sec.msgs.filter(m => !m.id.startsWith(`${a.id}.`));
     for (const fs of fresh.files.messages.sections) {
@@ -322,6 +340,8 @@ export function templateResync(pkg, tpl, rec, { now = new Date() } = {}) {
   // New open items from the template are added; existing ones are kept as they are (answers line up by id).
   for (const q of fresh.files.messages.questions) if (!out.files.messages.questions.some(x => x.id === q.id)) out.files.messages.questions.push(clone(q));
   out.template = { ...out.template, version: tpl.template.version };
+  // what the template now says, for the next resync (customised automations keep theirs only if the template didn't change them)
+  out.templateHashes = { ...(pkg.templateHashes || {}), ...Object.fromEntries(Object.entries(freshHashes).filter(([id]) => !customised.some(c => c.id === id))) };
   out.checklist = (tpl.template.checklist || []).map(text => (pkg.checklist || []).find(c => c.text === text) || { text, done: false });
   return { pkg: out, changed, customised, unchanged, messages: changed.reduce((n, c) => n + c.messages, 0) };
 }
@@ -390,11 +410,15 @@ export function parseGhlPaste(text) {
   let j; try { j = JSON.parse(String(text || '').trim()); } catch { throw new Error('That isn\'t the "Copy workflows" output. Run the script on the client\'s GHL tab again, then paste.'); }
   if (!j || j.kind !== 'lfmp-ghl-workflows' || !Array.isArray(j.workflows)) throw new Error('That isn\'t the "Copy workflows" output (it should start with {"kind":"lfmp-ghl-workflows"…).');
   if (/access-token|bearer\s+ey|"token"\s*:/i.test(JSON.stringify(j))) throw new Error('The pasted text contains a token. It was not used. Copy the workflows again with the builder\'s script.');
+  // A paste from the first version of "Copy workflows" lists folder workflows twice: keep one per id (the copy with the folder name).
+  const byId = new Map();
+  for (const w of j.workflows) { const k = w.id || w.name, old = byId.get(k); if (!old || (!old.folder && w.folder)) byId.set(k, w); }
+  j.workflows = [...byId.values()];
   return j;
 }
 // Maps GHL nodes to the package's message ids (same order the template was built in) and lists differences.
 export function ghlDiff(pkg, paste, rec = {}) {
-  const P = typeof paste === 'string' ? parseGhlPaste(paste) : paste;
+  const P = parseGhlPaste(typeof paste === 'string' ? paste : JSON.stringify(paste));
   const firm = pkg.firmName || pkg.files.data.client.name;
   const warnings = [], diffs = [], matched = [];
   if (rec.locationId && P.locationId && P.locationId !== rec.locationId) warnings.push(`These workflows were copied from location ${P.locationId}, not this client's (${rec.locationId}). Nothing was compared.`);

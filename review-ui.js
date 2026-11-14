@@ -21,7 +21,10 @@ export function initReview(deps) { D = deps; }
 const live = {}; // record id -> { pkg, sha, loading, busy, steps, error, runUrl, existing, tplLatest, resync, paste, msg, preview }
 export const liveOf = id => (live[id] ||= { steps: {} });
 const AR = () => D.cfg.reviewRepo || 'peejayedz/automation-review';
-const TPL_BASE = () => (D.cfg.reviewTemplateBase || `https://raw.githubusercontent.com/${AR()}/main/templates/${R.TEMPLATE_ID}/`).replace(/\/?$/, '/');
+// ?tpltest=1 (S4 only): read a TEST template from this page's own test-templates/ folder instead of automation-review.
+// Same origin only, so a link can't point the builder at someone else's template. The card says so in red.
+export const TEMPLATE_TEST = () => new URLSearchParams(location.search).get('tpltest') === '1';
+const TPL_BASE = () => (TEMPLATE_TEST() ? `test-templates/${R.TEMPLATE_ID}/` : (D.cfg.reviewTemplateBase || `https://raw.githubusercontent.com/${AR()}/main/templates/${R.TEMPLATE_ID}/`)).replace(/\/?$/, '/');
 const PAGES = () => (D.cfg.reviewPagesBase || R.REVIEW_BASE).replace(/\/?$/, '/');
 const nowIso = () => new Date().toISOString();
 
@@ -286,12 +289,13 @@ export function reviewCardHtml(r) {
           ${P.diffs.length ? `<p><b>${P.diffs.length} message${P.diffs.length === 1 ? ' differs' : 's differ'} from GHL</b> (${P.matched.length} match).</p><ul class="rvdiffs">${P.diffs.map(d => `<li><div class="rvmh"><span class="kind">${esc(d.kind)}</span><span class="when">${esc(d.when)}</span><span class="mono hint">${esc(d.id)} · GHL "${esc(d.ghlStep)}"</span></div>${d.fields.map(f => `<p class="rvd"><span class="hint">${f.field === 'subject' ? 'Subject' : 'Text'}:</span> ${f.diff.map(x => x.op === '=' ? esc(x.text.length > 90 ? `${x.text.slice(0, 40)} … ${x.text.slice(-40)}` : x.text) : x.op === '+' ? `<ins>${esc(x.text)}</ins>` : `<del>${esc(x.text)}</del>`).join(' ')}</p>`).join('')}</li>`).join('')}</ul>
             <div class="btnrow">${btn('rvapply', L.busy === 'apply' ? 'Applying…' : `Apply ${P.diffs.length} change${P.diffs.length === 1 ? '' : 's'} to the preview`, ICON.tick, 'primary')}</div>` : (P.warnings.length ? '' : `<p class="okline">${ICON.tick} All ${P.matched.length} messages match GHL.</p>`)}` : ''}</details>`;
       if (pkg.checklist?.length) body += `<details class="rvsub"><summary>Before go-live in GHL (${pkg.checklist.length})</summary><ul class="checklist">${pkg.checklist.map(c => `<li>${esc(c.text)}</li>`).join('')}</ul></details>`;
-      const canPublish = !problems.length && (v.status !== 'published' || v.dirty);
+      const canPublish = !problems.length && (v.status !== 'published' || v.dirty) && !TEMPLATE_TEST();
       const label = L.busy === 'publish' ? 'Publishing…' : v.status === 'publish_failed' ? 'Retry publish' : v.status === 'published' ? 'Publish changes' : 'Publish';
       if (v.status !== 'published' || v.dirty || L.busy === 'publish') actions = btn('rvpublish', label, ICON.ext, 'primary', canPublish ? '' : ' disabled');
       if (v.status !== 'published') body += '<p class="hint">Publish = ready for Andy to send: commits the 3 files to automation-review, registers the client, runs a smoke test, then saves links A and B here.</p>';
     }
   }
+  if (TEMPLATE_TEST()) body = `<div class="errbox"><b>Test template mode</b> (?tpltest=1): template updates here come from the builder's test-templates folder, not automation-review. Don't publish in this mode.</div>${body}`;
   return `<section class="panel rvcard" data-review="${esc(r.id)}" aria-live="polite">
     <div class="kpihead"><h4>Automation review</h4><span class="chip ${s.tone}" data-chip="reviewstate"><span class="dot"></span>${esc(s.label)}</span>${L.busy === 'publish' ? '<span class="hint">You can leave this page; GitHub keeps going.</span>' : ''}</div>
     ${body}${pubSteps}${err}${actions ? `<div class="btnrow">${actions}</div>` : ''}</section>`;

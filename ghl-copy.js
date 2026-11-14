@@ -37,16 +37,20 @@ export function copyWorkflows() {
     return (d.body ? d.body.textContent : '').replace(/ /g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   };
   return (async () => {
-    const all = [];
+    // GHL's top-level list (parentId empty) ALSO returns the workflows that sit inside folders, so the same workflow
+    // shows up twice: once with no folder, once from its folder. Keep one per id, preferring the copy with the folder name.
+    const byId = new Map();
+    const keep = w => { const old = byId.get(w.id); if (!old || (!old.folder && w.folder)) byId.set(w.id, w); };
     const walk = async (parentId, folder, depth) => {
       const r = await get(API + '/workflow/' + loc + '/list?parentId=' + encodeURIComponent(parentId || ''));
       for (const row of r.rows || []) {
         const id = row.id || row._id;
         if (row.type === 'directory') { if (depth < 3) await walk(id, (folder ? folder + ' / ' : '') + row.name, depth + 1); }
-        else all.push({ id, name: row.name, status: row.status, folder });
+        else keep({ id, name: row.name, status: row.status, folder });
       }
     };
     await walk('', '', 0);
+    const all = [...byId.values()];
     let templates = null;
     const templateById = async id => {
       if (!templates) { const t = await get(API + '/locations/' + loc + '/templates?type=email'); templates = {}; (t.templates || t.data || []).forEach(x => { templates[x.id || x._id] = x; }); }
