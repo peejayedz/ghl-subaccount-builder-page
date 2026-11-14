@@ -8,4 +8,7 @@ window.BUILDER_CONFIG = {
   api: 'https://api.github.com',
   // LeadPro KPI dashboards (Phase 2): the page saves a new firm's passphrase there and starts new-firm.yml.
   kpiRepo: 'peejayedz/leadpro-kpi',
+  // Automation review (Phase 4): the public review site. The page reads its template + data listing and shows previews
+  // with its real plan/messages pages; publishing is done by review-publish.yml (this repo's secrets), never by the page.
+  reviewRepo: 'peejayedz/automation-review',
 };

@@ -4,6 +4,8 @@
 import * as S from './shared.js';
 import * as W from './webforms.js';
 import * as K from './kpi.js';
+import * as RV from './review-ui.js';
+import * as RVR from './review.js';
 
 const CFG = window.BUILDER_CONFIG;
 const API = CFG.api.replace(/\/$/, '');
@@ -48,6 +50,7 @@ const LINK_ICON = {
   sheet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>',
   review: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 11l2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="2"/></svg>',
 };
+LINK_ICON.reviewMessages = LINK_ICON.review;
 
 let lock = null, aesKey = null, ghToken = null;
 const state = { records: [], attention: [], snapshots: [], snapshotNames: {}, subaccounts: [], loaded: false, form: null, run: null,
@@ -209,11 +212,22 @@ async function getJSON(path) { const t = await gh('GET', `${R}/contents/${conten
 async function listDir(path) { const r = await gh('GET', `${R}/contents/${contentPath(path)}?ref=${BRANCH}`, null, { allow404: true }); return Array.isArray(r) ? r : []; }
 async function mapLimit(items, n, fn) { const out = new Array(items.length); let i = 0; await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; try { out[k] = await fn(items[k]); } catch { out[k] = null; } } })); return out; }
 
-// The page's only write to the repo: saving ONE client record (records/<id>.json) through GitHub's
-// contents API. Each save is a commit. Anything else is refused here (tests/unit/safety.test.mjs checks it).
+// The page's only write to the repo: saving ONE client record (records/<id>.json), or that record's review package
+// preview (records/<id>/review-package/package.json), through GitHub's contents API. Each save is a commit.
+// Anything else is refused here (tests/unit/safety.test.mjs checks it).
 async function putContents(path, text, sha, message) {
-  if (!/^records\/[a-z0-9-]{1,60}\.json$/.test(path)) throw new Error('Blocked: the page may only save client records.');
+  if (!/^records\/[a-z0-9-]{1,60}(\/review-package\/package)?\.json$/.test(path)) throw new Error('Blocked: the page may only save client records and their review package preview.');
   return gh('PUT', `${R}/contents/${contentPath(path)}`, { message, content: toB64(enc.encode(text)), sha, branch: BRANCH });
+}
+// Review package preview (Phase 4): one file per record.
+async function getPackage(id) {
+  const r = await gh('GET', `${R}/contents/${contentPath(`records/${id}/review-package/package.json`)}?ref=${BRANCH}`, null, { allow404: true });
+  return r ? { pkg: JSON.parse(dec.decode(fromB64(r.content))), sha: r.sha } : null;
+}
+async function savePackage(id, pkg, sha, message) {
+  const path = `records/${id}/review-package/package.json`;
+  if (sha === undefined || sha === null) { const cur = await gh('GET', `${R}/contents/${contentPath(path)}?ref=${BRANCH}`, null, { allow404: true }); sha = cur?.sha; }
+  return putContents(path, `${JSON.stringify(pkg, null, 2)}\n`, sha || undefined, message);
 }
 // Re-reads the record, applies `mutate`, saves. Retries when someone else saved in between.
 async function saveRecord(id, mutate, message) {
@@ -310,7 +324,8 @@ function renderList() {
 }
 function statusChip(rec) { const s = S.RECORD_STATUS[rec.status] || { label: rec.status || 'Unknown', tone: '' }; return `<span class="chip ${s.tone}" data-chip="status"><span class="dot"></span>${esc(s.label)}${rec.status === 'snapshot_loading' && rec.snapshotProgress?.percent ? ` · ${rec.snapshotProgress.percent}%` : ''}</span>`; }
 const kpiChip = r => { const s = K.kpiState(r); return `<span class="chip ${s.tone}" data-chip="kpi">KPI: ${esc(s.label)}</span>`; };
-const reviewChip = r => `<span class="chip ${r.reviewRequested ? 'info' : ''}" data-chip="review">Review page: ${r.reviewRequested ? 'Requested — set up later' : 'Not requested'}</span>`;
+const reviewChip = r => { const s = RV_STATE(r); return `<span class="chip ${s.tone}" data-chip="review">Review: ${esc(s.label)}</span>`; };
+const RV_STATE = r => RVR.reviewState(r, RV.liveOf(r.id).tplLatest);
 const webformsChip = r => { const s = W.webformsStatus(r); return `<span class="chip ${s.tone}" data-chip="webforms">Webforms: ${esc(s.label)}</span>`; };
 // Compact row of link buttons: present = opens in a new tab; missing = greyed with what's missing.
 function linkBar(r) {
@@ -416,6 +431,7 @@ function paintDetails() {
   if (keepScroll) host.closest('.dlg').scrollTop = keepScroll;
   paintProjects(r);
   paintWfState(r);
+  RV.warm(r.id);   // loads the review preview + latest template version once, then repaints the card
 }
 function detailsHtml(r) {
   const f = fieldRows({ brand: r.brand, csm: r.csm, webformsRequested: r.webformsRequested, mastersheet: r.links?.sheet, ...r.submitted });
@@ -425,6 +441,7 @@ function detailsHtml(r) {
     <div class="chips" style="display:flex;gap:6px;flex-wrap:wrap">${statusChip(r)}${kpiChip(r)}${reviewChip(r)}${webformsChip(r)}</div>
     ${linksSection(r)}
     ${K.kpiCardHtml(r)}
+    ${RV.reviewCardHtml(r)}
     ${webformsCard(r)}
     <div><h4>Sub-account</h4>${kv([['Location ID', `<span class="mono">${esc(r.locationId)}</span> <button class="linkbtn" type="button" data-act="copyid" data-id="${esc(r.locationId)}">Copy</button>`], ['Open in GHL', `<a href="${esc(r.links?.ghl)}" target="_blank" rel="noopener">${esc(r.links?.ghl)}</a>`], ['Client login', `<a href="${esc(r.links?.clientLogin)}" target="_blank" rel="noopener">${esc(r.links?.clientLogin)}</a>`], ['Snapshot', esc(snapName(r.snapshot?.id, r.snapshot?.name))], ['Snapshot load', sp ? esc(`${sp.percent}% · ${sp.completed} done, ${sp.pending} pending · GHL status "${sp.status}" · checked ${fmtDate(sp.checkedAt)}`) : '']])}</div>
     <div><h4>Business</h4>${kv(f.business)}</div><div><h4>Address</h4>${kv(f.address)}</div><div><h4>Primary contact</h4>${kv(f.contact)}</div>
@@ -1026,6 +1043,7 @@ async function showResult(extra = {}) {
       <div class="btnrow"><a class="btn primary big" href="${esc(ghlLink)}" target="_blank" rel="noopener">${ICON.ext} Open in GHL</a><button class="btn big" type="button" data-act="another">${ICON.plus} Create another</button><button class="btn big" type="button" data-act="golist">Back to the list</button></div>
       <div><h4>Sub-account</h4>${kv([['Location ID', `<span class="mono">${esc(f.locationId)}</span> <button class="btn" type="button" data-act="copyid" data-id="${esc(f.locationId)}">${ICON.copy} Copy</button>`], ['Client login link', `<a href="${esc(login)}" target="_blank" rel="noopener">${esc(login)}</a> <button class="btn" type="button" data-act="copytext" data-text="${esc(login)}" data-what="Login link">${ICON.copy} Copy</button>`], ['Snapshot used', esc(rec?.snapshot?.name || run.payload?.snapshotName || '')], ['Time taken', esc(took)]])}</div>
       ${rec ? K.kpiCardHtml(rec, { where: 'done' }) : ''}
+      ${rec && rec.reviewRequested ? RV.reviewCardHtml(rec) : ''}
       <div><h4>Business</h4>${kv(fr.business)}</div><div><h4>Address</h4>${kv(fr.address)}</div><div><h4>Primary contact</h4>${kv(fr.contact)}</div>
       <div><h4>Webforms</h4>${kv(fr.webforms)}</div>
       <div><h4>Next steps</h4><ul class="checklist">
@@ -1035,7 +1053,7 @@ async function showResult(extra = {}) {
         <li>Email sending domain</li>
         <li>Connect the calendar</li>
         ${kpi ? `<li>KPI dashboard <span class="later">· ${still ? 'set it up from the record once the snapshot has loaded' : 'setting up below'}</span></li>` : ''}
-        ${rev ? '<li>Automation review page <span class="later">· a later phase will automate this</span></li>' : ''}
+        ${rev ? `<li>Automation review package <span class="later">· ${still ? 'create it from the record once the snapshot has loaded' : 'preview created below; tailor it after the kickoff call, then Publish'}</span></li>` : ''}
       </ul></div>
     </div>`;
     if (rec) {
@@ -1044,6 +1062,7 @@ async function showResult(extra = {}) {
       rec.id ||= f.recordPath.replace(/^records\/|\.json$/g, '');
       const k = state.records.findIndex(x => x.id === rec.id); if (k >= 0) state.records[k] = rec; else state.records.unshift(rec);
       if (rec.kpiRequested && f.status === 'done' && !rec.kpi?.status) K.startKpi(rec.id, { auto: true });
+      if (rec.reviewRequested && f.status === 'done' && !rec.review?.status) RV.autoCreate(rec.id);   // preview only; Publish stays a click
     }
     loadRecords().catch(() => {});
   } else {
@@ -1129,6 +1148,7 @@ document.addEventListener('click', e => {
   else if (act === 'canceledit') { state.editLink = null; paintDetails(); }
   else if (act === 'savelink') saveLink(a.dataset.k, a);
   else if (act.startsWith('kpi')) K.onKpiAct(act, a);
+  else if (act.startsWith('rv')) RV.onReviewAct(act, a);
   else if (['wfon', 'wfsave', 'wfpreview', 'wfsend', 'wfuseexisting'].includes(act)) {
     const r = wfRec(state.detailsId); if (!r) return;
     if (act === 'wfpreview') wfPreview(r);
@@ -1162,5 +1182,9 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id
 
 K.initKpi({ gh, saveRecord, record: id => state.records.find(x => x.id === id), esc, ICON, toast, copy, who: () => whoName(), cfg: CFG,
   newRequestId: () => S.newRequestId(), paintList: () => paintList(), sleep, pollMs: POLL_MS,
+  detailsOpen: () => ($('detBody') ? state.detailsId : null), paintDetails: () => paintDetails() });
+RV.initReview({ gh, saveRecord, savePackage, getPackage, getJSON, dispatch, record: id => state.records.find(x => x.id === id),
+  setRecord: (id, rec) => { const k = state.records.findIndex(x => x.id === id); if (k >= 0) state.records[k] = rec; },
+  esc, ICON, toast, copy, who: () => whoName(), cfg: CFG, newRequestId: () => S.newRequestId(), paintList: () => paintList(), sleep, pollMs: POLL_MS,
   detailsOpen: () => ($('detBody') ? state.detailsId : null), paintDetails: () => paintDetails() });
 boot();

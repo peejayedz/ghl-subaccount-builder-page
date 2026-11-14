@@ -7,6 +7,7 @@ export const DESK_SITE = 'wpplfmp.teamwork.com';
 export const deskTicketUrl = id => `https://${DESK_SITE}/desk/tickets/${id}`;
 export const BRANDS = ['LFMP', 'WPP'];
 export const KPI_PREFIX = 'https://peejayedz.github.io/leadpro-kpi/';
+export const REVIEW_PREFIX = 'https://peejayedz.github.io/automation-review/';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = s => String(s ?? '').trim();
@@ -42,7 +43,9 @@ export const LINKS = [
   { key: 'ticket', short: 'Ticket', label: 'Desk ticket', missing: 'No ticket yet', check: v => host([DESK_SITE], 'Ticket link')(v) || (ticketIdFromUrl(v) ? '' : 'Ticket link must include the ticket number, e.g. …/desk/tickets/3640383') },
   { key: 'kpi', short: 'KPI', label: 'KPI dashboard', missing: 'No KPI dashboard yet', check: startsWith(KPI_PREFIX, 'KPI link') },
   { key: 'sheet', short: 'Sheet', label: 'Mastersheet', missing: 'No Mastersheet yet', check: startsWith('https://docs.google.com/spreadsheets/', 'Mastersheet link') },
-  { key: 'review', short: 'Review', label: 'Automation review page', missing: 'Review page: set up in a later phase', readOnly: true },
+  // Automation review (Phase 4): A = plan page (the default link, the list's "Review" button), B = messages page (re-reviews).
+  { key: 'review', short: 'Review', label: 'Review page A (plan)', missing: 'No review page yet', check: startsWith(REVIEW_PREFIX, 'Review link') },
+  { key: 'reviewMessages', short: 'Msgs', label: 'Review page B (messages)', missing: 'No review page yet', check: startsWith(REVIEW_PREFIX, 'Review link'), noButton: true },
 ];
 export const LINK = Object.fromEntries(LINKS.map(l => [l.key, l]));
 // '' when fine (empty is fine: links are optional), else a plain message.

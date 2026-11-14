@@ -331,3 +331,45 @@ a.lk:hover{background:var(--hover);text-decoration:none;border-color:var(--sel-l
   .search{max-width:none}
   .formfoot .btn,.btnrow.stack .btn{flex:1 1 auto}
 }
+
+/* Automation review card (Phase 4) */
+.rvcard .btnrow{margin-top:0}
+.rvcard>.hint{margin:0}
+.rvcard .kv1{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0;font-size:13.5px;color:var(--ink-2)}
+.rvcard .pubstate{display:flex;gap:8px;align-items:flex-start;margin:0;color:var(--ok-ink);font-size:14px}
+.rvcard .pubstate svg{width:18px;height:18px;flex:none;margin-top:1px}
+.rvcard .warnword{color:var(--warn-ink);font-weight:600}
+.rvcard .okline{display:flex;gap:6px;align-items:center;margin:0;color:var(--ok-ink)} .rvcard .okline svg{width:16px;height:16px}
+.rvcard .rvlinks li{display:grid;grid-template-columns:minmax(0,200px) minmax(0,1fr) auto;gap:8px;align-items:center}
+.rvsub{border-top:1px solid var(--rule);padding-top:8px}
+.rvsub>summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--ink);padding:4px 0}
+.rvsub[open]>summary{margin-bottom:8px}
+.rvsub .f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--ink-2);margin-top:6px}
+.rvsub textarea,.rvsub input{width:100%;font:13.5px/1.45 var(--sans);color:var(--ink);background:var(--field);border:1px solid var(--rule);border-radius:8px;padding:8px 10px}
+.rvmsgs,.rvdiffs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.rvmsgs>li,.rvdiffs>li{border:1px solid var(--rule);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.rvmh{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:13px}
+.rvmh .kind{font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--sel-ink);background:var(--sel-bg);border-radius:999px;padding:1px 8px}
+.rvmh .when{color:var(--ink-2)}
+.rvmh .btn{margin-left:auto}
+.rvtext,.rvd{margin:0;font-size:13.5px;color:var(--ink-2);overflow-wrap:anywhere}
+.rvd ins{background:var(--ok-bg);color:var(--ok-ink);text-decoration:none;border-radius:3px;padding:0 2px}
+.rvd del{background:var(--bad-bg);color:var(--bad-ink);border-radius:3px;padding:0 2px}
+.btn.bm{cursor:grab}
+/* preview overlay (the real plan/messages pages in a sandboxed frame) */
+.rvov{position:fixed;inset:0;z-index:60;background:var(--page);display:flex;flex-direction:column}
+.rvbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 16px;border-bottom:1px solid var(--rule);background:var(--card)}
+.rvbar .seg{display:inline-flex;gap:4px;margin-left:auto}
+.rvbar .btn.on{background:var(--sel-bg);color:var(--sel-ink);border-color:var(--sel-line)}
+.rvframe{flex:1;min-height:0;display:flex}
+.rvframe iframe{flex:1;border:0;width:100%;background:#fff}
+.rvframe .hint,.rvframe .errbox{margin:16px}
+@media (max-width:640px){
+  .rvcard .rvlinks li{grid-template-columns:1fr;gap:4px}
+  .rvcard .rvlinks li>*{grid-column:1/-1}
+  .rvbar .seg{margin-left:0;order:3;flex-basis:100%}
+  .rvbar .seg .btn{flex:1}
+}
+.rvcard .btnrow.left{justify-content:flex-start}
+.rvsub textarea,.rvsub input{box-sizing:border-box;max-width:100%}
+.rvcard .rvsub .btnrow,.rvcard .rvupdate .btnrow{justify-content:flex-start}
