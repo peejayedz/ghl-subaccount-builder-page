@@ -5,6 +5,7 @@
 // Writes: the record and its preview file records/<id>/review-package/package.json (through app.js's guarded
 // saveRecord / savePackage), and one review-publish.yml start. It never talks to GHL or to the Automation Review backend.
 import * as R from './review.js';
+import * as G from './review-ghl.js';
 import { consoleScript, bookmarklet } from './ghl-copy.js';
 
 export const PUBLISH_STEPS = [
@@ -110,53 +111,91 @@ async function markChanged(id, message) {
   if (r.review?.status === 'published' || r.review?.status === 'publish_failed') await D.saveRecord(id, x => { x.review = { ...(x.review || {}), dirty: !!x.review?.published, templateVersion: liveOf(id).pkg.template.version }; }, message);
   else await D.saveRecord(id, x => { x.review = { ...(x.review || {}), templateVersion: liveOf(id).pkg.template.version }; }, message);
 }
+// One preview change: run it, check it, save it (one commit), mark the record, re-run Compare so the lists update.
+async function change(id, busy, fn, { log, commit, toast, after } = {}) {
+  const L = liveOf(id), r = D.record(id), who = D.who() || 'unknown'; if (L.busy) return false;
+  L.busy = busy; L.error = null; paint(id);
+  try {
+    let next = await fn(L.pkg, who);
+    if (log) next = G.logChange(next, { by: who, ...log });
+    const problems = R.validatePackage(next); if (problems.length) throw new Error(problems[0]);
+    await savePkg(id, next, `${r.businessName}: ${commit} (${who})`);
+    await markChanged(id, `${r.businessName}: review preview changed (${who})`);
+    if (L.pasteRaw) { try { L.paste = G.ghlDiff(L.pkg, L.pasteRaw, r); } catch { L.paste = null; } }
+    if (after) after();
+    L.repaintAll = true; if (toast) D.toast(toast);
+    return true;
+  } catch (e) { L.error = { message: e.message }; return false; }
+  finally { L.busy = null; paint(id); D.paintList(); }
+}
 async function saveEdit(id, msgId) {
-  const L = liveOf(id), who = D.who() || 'unknown'; if (L.busy) return;
   const k = msgId.replace(/[^a-z0-9]/gi, '_');
   const text = document.getElementById(`rvT-${k}`)?.value ?? '', subject = document.getElementById(`rvS-${k}`)?.value;
   if (!text.trim()) { D.toast('The wording can\'t be empty'); return; }
-  L.busy = 'edit'; paint(id);
-  try {
-    const next = R.editMessage(L.pkg, msgId, { text, subject });
-    const problems = R.validatePackage(next); if (problems.length) throw new Error(problems[0]);
-    await savePkg(id, next, `${D.record(id).businessName}: review wording changed (${msgId}) by ${who}`);
-    await markChanged(id, `${D.record(id).businessName}: review preview edited by ${who}`);
-    L.edit = null; L.repaintAll = true; D.toast('Wording saved in the preview');
-  } catch (e) { L.error = { message: e.message }; }
-  finally { L.busy = null; paint(id); }
+  await change(id, 'edit', pkg => R.editMessage(pkg, msgId, { text, subject }), { log: { reason: 'kickoff edit', message: msgId }, commit: `review wording changed (${msgId}) by ${D.who() || 'unknown'}`, toast: 'Wording saved in the preview', after: () => { liveOf(id).edit = null; } });
 }
 async function resync(id) {
-  const L = liveOf(id), r = D.record(id), who = D.who() || 'unknown'; if (L.busy || !L.resync) return;
-  L.busy = 'resync'; paint(id);
-  try {
-    const tpl = await loadTemplate(true);
-    const res = R.templateResync(L.pkg, tpl, r);
-    const problems = R.validatePackage(res.pkg); if (problems.length) throw new Error(problems[0]);
-    await savePkg(id, res.pkg, `${r.businessName}: review preview resynced to template ${tpl.template.version} (${who})`);
-    await markChanged(id, `${r.businessName}: review template ${tpl.template.version} (${who})`);
-    L.resyncDone = res; L.resync = null; L.repaintAll = true;
-    D.toast(`Resynced: ${res.messages} message${res.messages === 1 ? '' : 's'} updated in the preview`);
-  } catch (e) { L.error = { message: e.message }; }
-  finally { L.busy = null; paint(id); D.paintList(); }
+  const L = liveOf(id); if (!L.resync) return;
+  let res = null;
+  await change(id, 'resync', async pkg => { const tpl = await loadTemplate(true); res = R.templateResync(pkg, tpl, D.record(id)); return res.pkg; },
+    { log: { reason: 'template resync' }, commit: 'review preview resynced to the latest template', after: () => { L.resyncDone = res; L.resync = null; D.toast(`Resynced: ${res.messages} message${res.messages === 1 ? '' : 's'} updated in the preview`); } });
 }
 function comparePaste(id) {
   const L = liveOf(id), r = D.record(id);
-  try { L.paste = R.ghlDiff(L.pkg, document.getElementById(`rvPaste-${id}`)?.value || '', r); L.pasteError = null; }
-  catch (e) { L.paste = null; L.pasteError = e.message; }
+  const raw = document.getElementById(`rvPaste-${id}`)?.value || '';
+  try { L.paste = G.ghlDiff(L.pkg, raw, r); L.pasteRaw = raw; L.pasteError = null; }
+  catch (e) { L.paste = null; L.pasteRaw = null; L.pasteError = e.message; }
   paint(id);
 }
 async function applyPaste(id) {
-  const L = liveOf(id), r = D.record(id), who = D.who() || 'unknown'; if (L.busy || !L.paste?.diffs.length) return;
-  L.busy = 'apply'; paint(id);
-  try {
-    const next = R.applyGhl(L.pkg, L.paste.diffs);
-    const problems = R.validatePackage(next); if (problems.length) throw new Error(problems[0]);
-    await savePkg(id, next, `${r.businessName}: review preview updated from GHL (${L.paste.diffs.length} message${L.paste.diffs.length === 1 ? '' : 's'}, ${who})`);
-    await markChanged(id, `${r.businessName}: review preview updated from GHL (${who})`);
-    D.toast(`${L.paste.diffs.length} change${L.paste.diffs.length === 1 ? '' : 's'} from GHL applied to the preview`);
-    L.paste = null; L.repaintAll = true;
-  } catch (e) { L.error = { message: e.message }; }
-  finally { L.busy = null; paint(id); }
+  const L = liveOf(id); if (!L.paste?.diffs.length) return;
+  const n = L.paste.diffs.length;
+  await change(id, 'apply', pkg => G.applyGhl(pkg, L.paste.diffs, L.paste.links), { log: { reason: 'GHL resync', messages: L.paste.diffs.map(d => d.id) }, commit: `review preview updated from GHL (${n} message${n === 1 ? '' : 's'})`, toast: `${n} change${n === 1 ? '' : 's'} from GHL applied to the preview` });
+}
+const findNew = (L, wid) => [...(L.paste?.newWorkflows.build || []), ...(L.paste?.newWorkflows.other || [])].find(w => (w.id || w.name) === wid);
+const pasteWf = (L, wid) => L.paste?.paste.workflows.find(w => (w.id || w.name) === wid);
+async function addWorkflows(id, wids) {
+  const L = liveOf(id);
+  const names = wids.map(w => findNew(L, w)?.name).filter(Boolean);
+  await change(id, 'addwf', (pkg, who) => wids.reduce((p, w) => G.addWorkflow(G.saveLinks(p, L.paste.links), pasteWf(L, w), { by: who }).pkg, pkg),
+    { commit: `review package: added ${names.map(n => `"${n}"`).join(', ')} from GHL`, toast: `Added ${names.length} automation${names.length === 1 ? '' : 's'}: write each summary under Tailor the wording, then Publish` });
+}
+async function addMsg(id, i) {
+  const L = liveOf(id), nm = L.paste?.newMessages[i]; if (!nm) return;
+  await change(id, 'addmsg', (pkg, who) => G.addMessage(G.saveLinks(pkg, L.paste.links), nm, { by: who }), { commit: `review package: new ${nm.kind.toLowerCase()} from GHL in ${nm.automationName}`, toast: 'Message added to the preview' });
+}
+// Before removing: the backend's public read of this client's responses (rows + content edits). Nothing is ever deleted there.
+async function sheetResponses(id) {
+  const r = D.record(id), code = r.review?.code;
+  if (!r.review?.published) return { rows: [], content: [] };   // never published: nobody could have responded
+  let url = D.cfg.reviewSaveUrl;
+  if (!url) { const cfg = await fetch(`${PAGES()}config.js?t=${Date.now()}`, { cache: 'no-store' }).then(x => x.text()); url = (cfg.match(/saveUrl:\s*["']([^"']+)["']/) || [])[1]; }
+  if (!url) throw new Error('Couldn\'t find the review backend to check for responses. Nothing was removed.');
+  const j = await fetch(`${url}?client=${encodeURIComponent(code)}&t=${Date.now()}`, { cache: 'no-store' }).then(x => x.json()).catch(() => null);
+  if (!j || !j.ok) throw new Error('Couldn\'t check the Sheet for responses right now. Nothing was removed; try again.');
+  return { rows: j.rows || [], content: j.content || [] };
+}
+async function removeMsg(id, msgId) {
+  await change(id, 'rmmsg', async (pkg, who) => { const s = await sheetResponses(id); const i = msgId.lastIndexOf('.'); return G.removeMessage(pkg, msgId, G.responsesFor(s, msgId.slice(0, i), msgId.slice(i + 1)), { by: who }); },
+    { commit: `review package: removed ${msgId} (gone from GHL)`, toast: 'Message removed from the preview' });
+}
+async function removeWf(id, automation) {
+  await change(id, 'rmwf', async (pkg, who) => G.removeAutomation(pkg, automation, G.responsesFor(await sheetResponses(id), automation), { by: who }),
+    { commit: `review package: removed automation ${automation} (gone from GHL)`, toast: 'Automation removed from the preview' });
+}
+async function matchWf(id, automation) {
+  const L = liveOf(id), wid = document.getElementById(`rvMatch-${automation}`)?.value; if (!wid) { D.toast('Pick the GHL workflow first'); return; }
+  await change(id, 'match', pkg => G.matchWorkflow(pkg, automation, pasteWf(L, wid)), { commit: `review package: ${automation} matched to GHL "${pasteWf(L, wid)?.name}"`, toast: 'Matched' });
+}
+async function saveSummary(id, automation) {
+  liveOf(id).newOpen = true;
+  const text = document.getElementById(`rvSum-${automation}`)?.value || '';
+  await change(id, 'summary', pkg => G.setSummary(pkg, automation, text), { log: { reason: 'new workflow', automation }, commit: `review summary for ${automation}`, toast: 'Summary saved' });
+}
+async function addQ(id, automation) {
+  liveOf(id).newOpen = true;
+  const v = k => document.getElementById(`rvQ${k}-${automation}`)?.value || '';
+  await change(id, 'question', pkg => G.addQuestion(pkg, automation, { q: v('q'), why: v('w'), opts: v('o').split(',') }), { commit: `review question added for ${automation}`, toast: 'Question added' });
 }
 
 // Publish: starts review-publish.yml once (the button locks at the first click) and follows its run file.
@@ -239,6 +278,46 @@ window.addEventListener('message', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('rvOverlay')?.firstChild) { document.getElementById('rvOverlay').innerHTML = ''; e.stopImmediatePropagation(); } }, true);
 
+// ---------------------------------------------------------------- Compare results (three lists)
+const trim = (t, n = 160) => { const s = String(t || '').replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n)}…` : s; };
+function diffLine(f, esc) {
+  return `<p class="rvd"><span class="hint">${f.field === 'subject' ? 'Subject' : 'Text'}:</span> ${f.diff.map(x => x.op === '=' ? esc(x.text.length > 90 ? `${x.text.slice(0, 40)} … ${x.text.slice(-40)}` : x.text) : x.op === '+' ? `<ins>${esc(x.text)}</ins>` : `<del>${esc(x.text)}</del>`).join(' ')}</p>`;
+}
+const msgLi = (m, esc, extra = '') => `<li><div class="rvmh"><span class="kind">${esc(m.kind)}</span><span class="when">${esc(m.when || '')}</span>${extra}</div><p class="rvtext">${m.subject ? `<b>${esc(m.subject)}</b> · ` : ''}${esc(trim(m.text, 220))}</p></li>`;
+function newWfHtml(w, esc, btn) {
+  const key = w.id || w.name;
+  return `<li class="rvnewwf"><div class="rvmh"><b>${esc(w.name)}</b><span class="chip ${w.status === 'Draft' ? 'warn' : 'info'}">${esc(w.status)}</span><span class="hint">${esc(w.folder || 'no folder')}</span></div>
+    <p class="rvtext">Starts when: ${esc(w.triggers.join(' or ') || 'not set')} · ${esc(w.counts)}${w.unknown.length ? ` · <span class="warnword">to fill in: ${w.unknown.map(u => `[${esc(u)}]`).join(', ')}</span>` : ''}</p>
+    <details><summary>Show the ${w.msgs.length} message${w.msgs.length === 1 ? '' : 's'}</summary><ul class="rvdiffs">${w.msgs.map(m => msgLi(m, esc)).join('')}</ul></details>
+    <div class="btnrow">${btn('rvaddwf', 'Add to review package', D.ICON.plus, 'sm primary', ` data-w="${esc(key)}"`)}</div></li>`;
+}
+function pasteResultsHtml(r, L, btn) {
+  const { esc, ICON } = D, P = L.paste;
+  let h = P.warnings.map(w => `<div class="warnbox">${esc(w)}</div>`).join('');
+  // 1. changed messages
+  h += `<h5 class="rvh">Changed messages</h5>`;
+  h += P.diffs.length ? `<p><b>${P.diffs.length} message${P.diffs.length === 1 ? ' differs' : 's differ'} from GHL</b> (${P.matched.length} match).</p><ul class="rvdiffs">${P.diffs.map(d => `<li><div class="rvmh"><span class="kind">${esc(d.kind)}</span><span class="when">${esc(d.when)}</span><span class="mono hint">${esc(d.id)} · GHL "${esc(d.ghlStep)}"</span></div>${d.fields.map(f => diffLine(f, esc)).join('')}</li>`).join('')}</ul>
+      <div class="btnrow">${btn('rvapply', L.busy === 'apply' ? 'Applying…' : `Apply ${P.diffs.length} change${P.diffs.length === 1 ? '' : 's'} to the preview`, ICON.tick, 'primary')}</div>`
+    : `<p class="okline">${ICON.tick} ${P.matched.length} message${P.matched.length === 1 ? '' : 's'} match GHL.</p>`;
+  if (P.missing.length) h += `<p class="hint">${P.missing.length === 1 ? '1 automation wasn\'t' : `${P.missing.length} automations weren't`} found in GHL, so ${P.missing.length === 1 ? 'its messages weren\'t' : 'their messages weren\'t'} compared: see Removed / renamed below.</p>`;
+  if (P.newMessages.length || P.removedMessages.length) {
+    h += `<p class="hint">Inside the workflows already in the package:</p><ul class="rvdiffs">`
+      + P.newMessages.map((m, i) => msgLi(m, esc, `<span class="chip info">New message</span><span class="hint">in ${esc(m.automationName)}</span>${btn('rvaddmsg', 'Add', D.ICON.plus, 'sm', ` data-i="${i}"`)}`)).join('')
+      + P.removedMessages.map(m => msgLi(m, esc, `<span class="chip warn">Removed in GHL</span><span class="mono hint">${esc(m.id)}</span>${btn('rvrmmsg', 'Remove', D.ICON.cross, 'sm', ` data-m="${esc(m.id)}"`)}`)).join('') + '</ul>';
+  }
+  // 2. new in GHL
+  const nb = P.newWorkflows.build, no = P.newWorkflows.other;
+  h += `<h5 class="rvh">New in GHL <span class="hint">(${esc(P.buildFolders.join(', '))})</span></h5>`;
+  h += nb.length ? `<ul class="rvwfs">${nb.map(w => newWfHtml(w, esc, btn)).join('')}</ul>${nb.length > 1 ? `<div class="btnrow">${btn('rvaddall', `Add all new (${nb.length})`, ICON.plus)}</div>` : ''}` : '<p class="hint">No new workflows in the build folder.</p>';
+  if (no.length) h += `<label class="check"><input type="checkbox" data-act="rvothers" data-id="${esc(r.id)}"${L.showOthers ? ' checked' : ''}> Show other folders (${no.length})</label>${L.showOthers ? `<ul class="rvwfs">${no.map(w => newWfHtml(w, esc, btn)).join('')}</ul>` : ''}`;
+  // 3. removed / renamed
+  h += `<h5 class="rvh">Removed / renamed</h5>`;
+  h += P.missing.length ? `<ul class="rvwfs">${P.missing.map(m => `<li><div class="rvmh"><b>${esc(m.name)}</b><span class="hint">was "${esc(m.ghl)}" in GHL · not in the paste</span></div>
+      <div class="copyrow"><select id="rvMatch-${esc(m.automation)}" aria-label="Match ${esc(m.name)} to a GHL workflow"><option value="">Match to…</option>${m.candidates.map(c => `<option value="${esc(c.id || c.name)}">${esc(c.name)}${c.folder ? ` (${esc(c.folder)})` : ''}</option>`).join('')}</select>${btn('rvmatch', 'Match', ICON.tick, 'sm', ` data-a="${esc(m.automation)}"`)}${btn('rvrmwf', 'Remove from the package', ICON.cross, 'sm', ` data-a="${esc(m.automation)}"`)}</div>
+      <p class="hint">Remove is refused if the client has already responded to it (responses are never deleted).</p></li>`).join('')}</ul>` : '<p class="hint">Every automation in the package is still in GHL.</p>';
+  return h;
+}
+
 // ---------------------------------------------------------------- the card
 export function reviewCardHtml(r) {
   const { esc, ICON } = D, L = liveOf(r.id), v = r.review || {}, s = R.reviewState(r, L.tplLatest);
@@ -280,17 +359,29 @@ export function reviewCardHtml(r) {
             <div class="btnrow"><button class="btn primary sm" type="button" data-act="rveditsave" data-id="${esc(r.id)}" data-m="${esc(m.id)}"${L.busy ? ' disabled' : ''}>Save wording</button><button class="btn sm" type="button" data-act="rveditcancel" data-id="${esc(r.id)}">Cancel</button></div>`
             : `<p class="rvtext">${m.subject ? `<b>${esc(m.subject)}</b> · ` : ''}${esc(cur.length > 140 ? `${cur.slice(0, 140)}…` : cur)}</p>`}</li>`;
       }).join('')}</ol></details>`;
+      // New automations (added from GHL): summary + questions before Publish
+      const customs = pkg.files.data.automations.filter(a => a.source === 'custom');
+      if (customs.length) body += `<details class="rvsub" ${L.newOpen || customs.some(a => String(a.summary).endsWith(G.SUMMARY_PLACEHOLDER)) ? 'open' : ''}><summary>New automations from GHL (${customs.length})</summary>${customs.map(a => {
+        const ph = String(a.summary).endsWith(G.SUMMARY_PLACEHOLDER), qs = pkg.files.messages.questions.filter(q => q.id.startsWith(`${a.id}-q`));
+        return `<div class="rvnew"><div class="rvmh"><b>${esc(a.name)}</b><span class="chip ${ph ? 'warn' : 'good'}">${ph ? 'Summary needed' : 'Summary written'}</span><span class="mono hint">${esc(a.id)} · v${esc(a.version)}</span></div>
+          <label class="f">Summary (what it does, one or two sentences; shown to the client)<textarea id="rvSum-${esc(a.id)}" rows="2" placeholder="${esc(`${a.name}: when … the lead gets …`)}">${ph ? '' : esc(a.summary)}</textarea></label>
+          <div class="btnrow">${btn('rvsummary', 'Save summary', ICON.tick, ph ? 'primary sm' : 'sm', ` data-a="${esc(a.id)}"`)}</div>
+          ${qs.length ? `<ul class="rvqs">${qs.map(q => `<li><span class="hint">Question for the client:</span> ${esc(q.q)}${q.opts.length ? ` <span class="hint">(${q.opts.map(esc).join(' / ')})</span>` : ''}</li>`).join('')}</ul>` : ''}
+          <details class="rvq"><summary>Add a question for the client</summary><label class="f">Question<input id="rvQq-${esc(a.id)}"></label><label class="f">Why we ask <span class="hint">(optional)</span><input id="rvQw-${esc(a.id)}"></label><label class="f">Options, comma-separated <span class="hint">(leave empty for a typed answer)</span><input id="rvQo-${esc(a.id)}" placeholder="Yes, No"></label><div class="btnrow">${btn('rvaddq', 'Add question', ICON.plus, 'sm', ` data-a="${esc(a.id)}"`)}</div></details></div>`;
+      }).join('')}</details>`;
       const P = L.paste;
       body += `<details class="rvsub" ${P || L.pasteError || L.pasteOpen ? 'open' : ''}><summary>Paste from GHL (resync with the client's workflows)</summary>
         <ol class="clicks"><li>In GHL, open <b>${esc(r.businessName)}</b> (any page inside the sub-account).</li><li>Run <b>Copy workflows</b>: drag this to your bookmarks bar and click it there → <a class="btn sm bm" href="${esc(bookmarklet())}" draggable="true" onclick="return false" title="Drag me to the bookmarks bar">${ICON.copy}<span>Copy workflows</span></a>, or ${btn('rvcopyscript', 'Copy the console script', ICON.copy, 'sm')} and paste it in the browser console on the GHL tab.</li><li>It copies the workflows (read-only; nothing in GHL changes, no tokens). Paste below and press Compare.</li></ol>
         <label class="f">Workflows from GHL<textarea id="rvPaste-${esc(r.id)}" rows="3" spellcheck="false" placeholder='{"kind":"lfmp-ghl-workflows", …}'></textarea></label>
         <div class="btnrow">${btn('rvcompare', 'Compare with the preview', ICON.sync)}</div>
         ${L.pasteError ? `<div class="errbox" role="alert">${esc(L.pasteError)}</div>` : ''}
-        ${P ? `${P.warnings.map(w => `<div class="warnbox">${esc(w)}</div>`).join('')}
-          ${P.diffs.length ? `<p><b>${P.diffs.length} message${P.diffs.length === 1 ? ' differs' : 's differ'} from GHL</b> (${P.matched.length} match).</p><ul class="rvdiffs">${P.diffs.map(d => `<li><div class="rvmh"><span class="kind">${esc(d.kind)}</span><span class="when">${esc(d.when)}</span><span class="mono hint">${esc(d.id)} · GHL "${esc(d.ghlStep)}"</span></div>${d.fields.map(f => `<p class="rvd"><span class="hint">${f.field === 'subject' ? 'Subject' : 'Text'}:</span> ${f.diff.map(x => x.op === '=' ? esc(x.text.length > 90 ? `${x.text.slice(0, 40)} … ${x.text.slice(-40)}` : x.text) : x.op === '+' ? `<ins>${esc(x.text)}</ins>` : `<del>${esc(x.text)}</del>`).join(' ')}</p>`).join('')}</li>`).join('')}</ul>
-            <div class="btnrow">${btn('rvapply', L.busy === 'apply' ? 'Applying…' : `Apply ${P.diffs.length} change${P.diffs.length === 1 ? '' : 's'} to the preview`, ICON.tick, 'primary')}</div>` : (P.warnings.length ? '' : `<p class="okline">${ICON.tick} All ${P.matched.length} messages match GHL.</p>`)}` : ''}</details>`;
+        ${P ? pasteResultsHtml(r, L, btn) : ''}</details>`;
       if (pkg.checklist?.length) body += `<details class="rvsub"><summary>Before go-live in GHL (${pkg.checklist.length})</summary><ul class="checklist">${pkg.checklist.map(c => `<li>${esc(c.text)}</li>`).join('')}</ul></details>`;
-      const canPublish = !problems.length && (v.status !== 'published' || v.dirty) && !TEMPLATE_TEST();
+      const hist = v.history || [];
+      if (hist.length) body += `<details class="rvsub"><summary>History (${hist.length})</summary><ol class="rvhist">${hist.map(h => `<li><div class="rvmh"><b>${esc(new Date(h.at).toLocaleString())}</b><span>${esc(h.by || '')}</span><span class="hint">${esc((h.reasons || []).join(' · '))}</span></div>${h.total != null && !h.messages?.length ? `<p class="hint">First publish: ${h.total} messages sent for review.</p>` : h.messages?.length ? `<ul>${h.messages.map(m => `<li><span class="mono hint">${esc(m.id)}</span> ${m.change === 'changed' ? `<del>${esc(trim(m.old))}</del> → <ins>${esc(trim(m.new))}</ins>` : m.change === 'added' ? `<ins>added</ins> ${esc(trim(m.new))}` : `<del>removed</del> ${esc(trim(m.old))}`}</li>`).join('')}</ul>` : '<p class="hint">No message changes.</p>'}</li>`).join('')}</ol></details>`;
+      const blockers = G.publishBlockers(pkg);
+      if (blockers.length) body += `<div class="warnbox">${blockers.map(esc).join('<br>')}</div>`;
+      const canPublish = !problems.length && !blockers.length && (v.status !== 'published' || v.dirty) && !TEMPLATE_TEST();
       const label = L.busy === 'publish' ? 'Publishing…' : v.status === 'publish_failed' ? 'Retry publish' : v.status === 'published' ? 'Publish changes' : 'Publish';
       if (v.status !== 'published' || v.dirty || L.busy === 'publish') actions = btn('rvpublish', label, ICON.ext, 'primary', canPublish ? '' : ' disabled');
       if (v.status !== 'published') body += '<p class="hint">Publish = ready for Andy to send: commits the 3 files to automation-review, registers the client, runs a smoke test, then saves links A and B here.</p>';
@@ -324,7 +415,10 @@ export function onReviewAct(act, el) {
     rvedit: () => { L.edit = el.dataset.m; paint(id); document.getElementById(`rvT-${el.dataset.m.replace(/[^a-z0-9]/gi, '_')}`)?.focus(); },
     rveditcancel: () => { L.edit = null; paint(id); }, rveditsave: () => saveEdit(id, el.dataset.m),
     rvwho: () => { const v = (document.getElementById(`rvWho-${id}`)?.value || '').trim(); if (!v) { D.toast('Type your name first'); return; } D.setWho(v); D.toast(`Saved: ${v}`); paint(id); },
-    rvcopyscript: () => D.copy(consoleScript(), 'Copy-workflows script'), rvcompare: () => comparePaste(id), rvapply: () => applyPaste(id)
+    rvcopyscript: () => D.copy(consoleScript(), 'Copy-workflows script'), rvcompare: () => comparePaste(id), rvapply: () => applyPaste(id),
+    rvaddwf: () => addWorkflows(id, [el.dataset.w]), rvaddall: () => addWorkflows(id, L.paste.newWorkflows.build.map(w => w.id || w.name)),
+    rvaddmsg: () => addMsg(id, Number(el.dataset.i)), rvrmmsg: () => removeMsg(id, el.dataset.m), rvrmwf: () => removeWf(id, el.dataset.a), rvmatch: () => matchWf(id, el.dataset.a),
+    rvothers: () => { L.showOthers = el.checked; paint(id); }, rvsummary: () => saveSummary(id, el.dataset.a), rvaddq: () => addQ(id, el.dataset.a)
   };
   if (!map[act]) return false;
   map[act](); return true;

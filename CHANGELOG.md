@@ -5,6 +5,10 @@ v1.0.0 is released at deploy (Step 4); until then it is marked unreleased.
 
 ## [1.0.0] - unreleased
 
+- New (Phase 4 add-on): "Paste from GHL" now also finds **new workflows** in the client's build folder (with their trigger, Draft/Published, and every text, email and team alert), lists workflows in other folders behind "Show other folders", and lists package automations that are **gone or renamed in GHL** ("Match to…" or "Remove from the package"; Remove is refused, with the reason, when the client has already responded). **Add to review package** turns a new workflow into a new automation (version 1.0) with all its messages and timing; write its summary (and any questions) under "New automations from GHL" before Publish. Messages added or removed inside a workflow show as New / Removed instead of being compared by position.
+- New: a **History** list on the Review card: each Publish records what changed (per message) and why.
+- Changed (internal): "Copy workflows" v2 also copies each step's GHL id, branch and wait details, and each workflow's trigger names (still read-only, no tokens).
+
 - Fix: "Paste from GHL" → Apply put a newly added word on the same line as the next text (S4: "test2" added after a signature became "test2 Add to google calendar"). Added words now keep the line/paragraph they have in GHL; the preview's own line breaks stay as they were.
 - New: the Review card asks for your name once when this browser doesn't know it yet (changes were saved as "unknown"); its buttons stay off until it's saved.
 

@@ -373,3 +373,18 @@ a.lk:hover{background:var(--hover);text-decoration:none;border-color:var(--sel-l
 .rvcard .btnrow.left{justify-content:flex-start}
 .rvsub textarea,.rvsub input{box-sizing:border-box;max-width:100%}
 .rvcard .rvsub .btnrow,.rvcard .rvupdate .btnrow{justify-content:flex-start}
+/* GHL resync: three lists, new automations, history (Phase 4 add-on) */
+.rvh{margin:12px 0 2px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2)}
+.rvh .hint{text-transform:none;letter-spacing:0;font-weight:400}
+.rvwfs,.rvhist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.rvwfs>li,.rvhist>li,.rvnew{border:1px solid var(--rule);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.rvnew+.rvnew{margin-top:8px}
+.rvwfs details>summary,.rvq>summary{cursor:pointer;font-size:13px;color:var(--link)}
+.rvwfs .copyrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rvwfs select{font:13.5px var(--sans);color:var(--ink);background:var(--field);border:1px solid var(--rule);border-radius:8px;padding:6px 8px;max-width:100%}
+.rvhist ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--ink-2);overflow-wrap:anywhere}
+.rvhist ins{background:var(--ok-bg);color:var(--ok-ink);text-decoration:none;border-radius:3px;padding:0 2px}
+.rvhist del{background:var(--bad-bg);color:var(--bad-ink);border-radius:3px;padding:0 2px}
+.rvcard .check{display:flex;gap:6px;align-items:center;font-size:13.5px;margin-top:4px}
+.rvmh .chip{font-size:11.5px}
+.rvqs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13.5px}

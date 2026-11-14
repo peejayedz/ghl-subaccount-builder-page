@@ -59,10 +59,30 @@ export function copyWorkflows() {
     const out = [];
     for (const w of all) {
       const d = await get(API + '/workflow/' + loc + '/' + w.id);
+      // triggers: names and types only (read-only)
+      let triggers = [];
+      try { const tr = await get(API + '/workflow/' + loc + '/trigger?workflowId=' + encodeURIComponent(w.id)); triggers = (Array.isArray(tr) ? tr : (tr.triggers || tr.data || [])).map(t => ({ type: t.type, name: t.name, active: t.active === true })); } catch (e) { triggers = []; }
+      // steps in flow order (follow "next" from the first step); the branch is the name of the if/else branch a step sits in
+      const nodes = (d.workflowData && d.workflowData.templates) || [];
+      const byNode = {}; nodes.forEach(n => { byNode[n.id] = n; });
+      const nextOf = n => (Array.isArray(n.next) ? n.next : String(n.next || '').split(',')).map(x => String(x).trim()).filter(x => byNode[x]);
+      const ordered = [], seen = {};
+      const visit = (n, branch) => {
+        if (!n || seen[n.id]) return; seen[n.id] = 1;
+        const parent = byNode[n.parentKey];
+        const b = n.type === 'if_else' && parent && parent.type === 'if_else' ? n.name : branch;
+        ordered.push([n, b]);
+        nextOf(n).forEach(k => visit(byNode[k], b));
+      };
+      nodes.filter(n => !n.parentKey || !byNode[n.parentKey]).forEach(n => visit(n, ''));
+      nodes.forEach(n => { if (!seen[n.id]) ordered.push([n, '']); });   // anything not reached: keep it, in GHL's order
       const steps = [];
-      for (const n of (d.workflowData && d.workflowData.templates) || []) {
-        const a = n.attributes || {}, s = { type: n.type, name: n.name };
-        if (n.type === 'wait') s.wait = { type: a.type, startAfter: a.startAfter || null };
+      for (const [n, branch] of ordered) {
+        const a = n.attributes || {}, s = { id: n.id, type: n.type, name: n.name, order: steps.length, branch };
+        if (n.type === 'wait') s.wait = a.type === 'appointment'
+          ? { kind: 'appointment', when: (a.appointmentStartAfter || {}).when || 'before', amount: (a.appointmentStartAfter || {}).value, unit: (a.appointmentStartAfter || {}).type }
+          : { kind: 'time', when: (a.startAfter || {}).when || 'after', amount: (a.startAfter || {}).value, unit: (a.startAfter || {}).type };
+        if (n.type === 'live_chat_response') s.text = plain(a.liveChatResponse || '');
         if (n.type === 'sms') s.text = a.body || '';
         if (n.type === 'internal_notification') { s.channel = a.type; s.text = (a.sms && a.sms.body) || (a.email && a.email.body) || ''; }
         if (n.type === 'email') {
@@ -74,9 +94,9 @@ export function copyWorkflows() {
         }
         steps.push(s);
       }
-      out.push({ id: w.id, name: w.name, status: w.status, folder: w.folder, steps });
+      out.push({ id: w.id, name: w.name, status: w.status, folder: w.folder, triggers, steps });
     }
-    const result = { kind: 'lfmp-ghl-workflows', version: 1, locationId: loc, copiedAt: new Date().toISOString(), workflows: out };
+    const result = { kind: 'lfmp-ghl-workflows', version: 2, locationId: loc, copiedAt: new Date().toISOString(), workflows: out };
     const text = JSON.stringify(result);
     let copied = false;
     try { await navigator.clipboard.writeText(text); copied = true; } catch (e) { copied = false; }

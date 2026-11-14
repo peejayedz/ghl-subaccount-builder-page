@@ -359,9 +359,9 @@ export function ghlToChips(text, firmName) {
     .replace(/\{\{\s*([\w.]+)\s*\}\}/g, (m, k) => GHL_CHIPS[k] || `[${k}]`)
     .replace(/[’]/g, "'").replace(/ /g, ' ');
 }
-const words = s => String(s ?? '').replace(/[’]/g, "'").replace(/[“”]/g, '"').split(/\s+/).filter(Boolean);
+export const words = s => String(s ?? '').replace(/[’]/g, "'").replace(/[“”]/g, '"').split(/\s+/).filter(Boolean);
 // Known differences that are on the per-client checklist, not changes to bring in.
-function knownGhl(text, firmName, field) {
+export function knownGhl(text, firmName, field) {
   let t = text.replace(new RegExp(`${firmName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\.`, 'g'), `${firmName}.`);
   if (field === 'subject') t = t.replace(/\[Insert Name Of Law Firm\]/g, firmName);
   return t;
@@ -424,50 +424,4 @@ export function parseGhlPaste(text) {
   j.workflows = [...byId.values()];
   return j;
 }
-// Maps GHL nodes to the package's message ids (same order the template was built in) and lists differences.
-export function ghlDiff(pkg, paste, rec = {}) {
-  const P = parseGhlPaste(typeof paste === 'string' ? paste : JSON.stringify(paste));
-  const firm = pkg.firmName || pkg.files.data.client.name;
-  const warnings = [], diffs = [], matched = [];
-  if (rec.locationId && P.locationId && P.locationId !== rec.locationId) warnings.push(`These workflows were copied from location ${P.locationId}, not this client's (${rec.locationId}). Nothing was compared.`);
-  if (warnings.length) return { warnings, diffs, matched };
-  const msgs = allMessages(pkg);
-  for (const w of pkg.workflows || []) {
-    const g = P.workflows.find(x => norm(x.name) === norm(w.ghl));
-    if (!g) { warnings.push(`GHL workflow "${w.ghl}" wasn't in the paste.`); continue; }
-    const mine = msgs.filter(m => m.id.startsWith(`${w.automation}.`));
-    let nodes = (g.steps || []).filter(s => s.type === 'email' || s.type === 'sms');
-    if (mine.every(m => m.kind === 'Alert')) nodes = (g.steps || []).filter(s => s.type === 'internal_notification');
-    // Web lead + phone lead branches send the same emails: compare the first set, check the second matches it.
-    if (nodes.length === mine.length * 2) {
-      const a = nodes.slice(0, mine.length), b = nodes.slice(mine.length);
-      if (a.some((n, i) => words(n.text).join(' ') !== words(b[i].text).join(' ') || (n.subject || '') !== (b[i].subject || ''))) warnings.push(`In "${w.ghl}" the phone-lead emails no longer match the web-lead ones. Compared the web-lead branch only.`);
-      nodes = a;
-    }
-    if (nodes.length !== mine.length) warnings.push(`"${w.ghl}" has ${nodes.length} messages in GHL; the package has ${mine.length}. Compared them in order.`);
-    mine.forEach((m, i) => {
-      const n = nodes[i]; if (!n) return;
-      const ghlText = knownGhl(ghlToChips(m.kind === 'Alert' ? n.text : n.text, firm), firm, 'text');
-      const cur = m.kind === 'Alert' ? m.text.replace(/^Everyone on your team gets this text:\s*/, '') : m.text;
-      const fields = [];
-      if (words(cur).join(' ') !== words(ghlText).join(' ')) fields.push({ field: 'text', preview: cur, ghl: ghlText, diff: wordDiff(cur, ghlText) });
-      if (m.kind === 'Email') {
-        const gs = knownGhl(ghlToChips(n.subject, firm), firm, 'subject');
-        if (words(m.subject).join(' ') !== words(gs).join(' ')) fields.push({ field: 'subject', preview: m.subject, ghl: gs, diff: wordDiff(m.subject, gs) });
-      }
-      if (fields.length) diffs.push({ id: m.id, kind: m.kind, when: m.when, ghlStep: n.name, fields }); else matched.push(m.id);
-    });
-  }
-  return { warnings, diffs, matched };
-}
-// Brings the GHL wording into the preview (word by word, keeping the preview's line breaks).
-export function applyGhl(pkg, diffs) {
-  let out = pkg;
-  for (const d of diffs) {
-    const m = allMessages(out).find(x => x.id === d.id);
-    const f = Object.fromEntries(d.fields.map(x => [x.field, x]));
-    const cur = m.kind === 'Alert' ? m.text.replace(/^Everyone on your team gets this text:\s*/, '') : m.text;
-    out = editMessage(out, d.id, { subject: f.subject ? patchWords(m.subject, f.subject.ghl) : undefined, text: f.text ? patchWords(cur, f.text.ghl) : cur });
-  }
-  return out;
-}
+// GHL compare / apply / new workflows: see page/review-ghl.js
