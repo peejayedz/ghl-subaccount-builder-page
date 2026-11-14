@@ -5,6 +5,9 @@ v1.0.0 is released at deploy (Step 4); until then it is marked unreleased.
 
 ## [1.0.0] - unreleased
 
+- Fix: Compare now tells who changed a message. **Changed in GHL** → Apply brings GHL's wording in. **Tailored in builder, not in GHL yet** → no Apply; it shows the wording to put into GHL and adds an "Update GHL: …" line to "Before go-live in GHL" (the line clears once GHL matches). **Changed in both** → pick "Use GHL wording" or "Keep the builder's". Before, a builder edit that wasn't in GHL yet was offered as a GHL change, and Apply undid it (S5).
+- Fix: the "Show other folders" checkbox was stretched across the card on phones.
+
 - New (Phase 4 add-on): "Paste from GHL" now also finds **new workflows** in the client's build folder (with their trigger, Draft/Published, and every text, email and team alert), lists workflows in other folders behind "Show other folders", and lists package automations that are **gone or renamed in GHL** ("Match to…" or "Remove from the package"; Remove is refused, with the reason, when the client has already responded). **Add to review package** turns a new workflow into a new automation (version 1.0) with all its messages and timing; write its summary (and any questions) under "New automations from GHL" before Publish. Messages added or removed inside a workflow show as New / Removed instead of being compared by position.
 - New: a **History** list on the Review card: each Publish records what changed (per message) and why.
 - Changed (internal): "Copy workflows" v2 also copies each step's GHL id, branch and wait details, and each workflow's trigger names (still read-only, no tokens).

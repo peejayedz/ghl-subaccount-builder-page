@@ -150,19 +150,30 @@ function comparePaste(id) {
 async function applyPaste(id) {
   const L = liveOf(id); if (!L.paste?.diffs.length) return;
   const n = L.paste.diffs.length;
-  await change(id, 'apply', pkg => G.applyGhl(pkg, L.paste.diffs, L.paste.links), { log: { reason: 'GHL resync', messages: L.paste.diffs.map(d => d.id) }, commit: `review preview updated from GHL (${n} message${n === 1 ? '' : 's'})`, toast: `${n} change${n === 1 ? '' : 's'} from GHL applied to the preview` });
+  await change(id, 'apply', pkg => G.applyGhl(pkg, L.paste.diffs, safeLinks(L)), { log: { reason: 'GHL resync', messages: L.paste.diffs.map(d => d.id) }, commit: `review preview updated from GHL (${n} message${n === 1 ? '' : 's'})`, toast: `${n} change${n === 1 ? '' : 's'} from GHL applied to the preview` });
 }
+async function useGhl(id, i) {
+  const L = liveOf(id), d = L.paste?.conflicts[i]; if (!d) return;
+  await change(id, 'usegh', pkg => G.applyGhl(pkg, [d], L.paste.links.filter(l => l.id === d.id)), { log: { reason: 'GHL resync', messages: [d.id] }, commit: `review preview: GHL wording kept for ${d.id}`, toast: 'GHL wording used' });
+}
+async function keepBuilder(id, i) {
+  const L = liveOf(id), d = L.paste?.conflicts[i]; if (!d) return;
+  // keep the preview; remember what GHL says now, so it shows as "update GHL" from here on
+  await change(id, 'keep', pkg => G.saveLinks(pkg, L.paste.links.filter(l => l.id === d.id)), { commit: `review preview: builder wording kept for ${d.id} (update GHL)`, toast: 'Kept: it\'s on the Before go-live in GHL list' });
+}
+// Links (and so "what GHL says now") for every matched message EXCEPT undecided conflicts: those wait for Use GHL / Keep.
+const safeLinks = L => (L.paste?.links || []).filter(l => !(L.paste?.conflicts || []).some(c => c.id === l.id));
 const findNew = (L, wid) => [...(L.paste?.newWorkflows.build || []), ...(L.paste?.newWorkflows.other || [])].find(w => (w.id || w.name) === wid);
 const pasteWf = (L, wid) => L.paste?.paste.workflows.find(w => (w.id || w.name) === wid);
 async function addWorkflows(id, wids) {
   const L = liveOf(id);
   const names = wids.map(w => findNew(L, w)?.name).filter(Boolean);
-  await change(id, 'addwf', (pkg, who) => wids.reduce((p, w) => G.addWorkflow(G.saveLinks(p, L.paste.links), pasteWf(L, w), { by: who }).pkg, pkg),
+  await change(id, 'addwf', (pkg, who) => wids.reduce((p, w) => G.addWorkflow(G.saveLinks(p, safeLinks(L)), pasteWf(L, w), { by: who }).pkg, pkg),
     { commit: `review package: added ${names.map(n => `"${n}"`).join(', ')} from GHL`, toast: `Added ${names.length} automation${names.length === 1 ? '' : 's'}: write each summary under Tailor the wording, then Publish` });
 }
 async function addMsg(id, i) {
   const L = liveOf(id), nm = L.paste?.newMessages[i]; if (!nm) return;
-  await change(id, 'addmsg', (pkg, who) => G.addMessage(G.saveLinks(pkg, L.paste.links), nm, { by: who }), { commit: `review package: new ${nm.kind.toLowerCase()} from GHL in ${nm.automationName}`, toast: 'Message added to the preview' });
+  await change(id, 'addmsg', (pkg, who) => G.addMessage(G.saveLinks(pkg, safeLinks(L)), nm, { by: who }), { commit: `review package: new ${nm.kind.toLowerCase()} from GHL in ${nm.automationName}`, toast: 'Message added to the preview' });
 }
 // Before removing: the backend's public read of this client's responses (rows + content edits). Nothing is ever deleted there.
 async function sheetResponses(id) {
@@ -294,11 +305,16 @@ function newWfHtml(w, esc, btn) {
 function pasteResultsHtml(r, L, btn) {
   const { esc, ICON } = D, P = L.paste;
   let h = P.warnings.map(w => `<div class="warnbox">${esc(w)}</div>`).join('');
-  // 1. changed messages
+  // 1. changed messages: who changed it decides what you can do
+  const head = (d, extra = '') => `<div class="rvmh"><span class="kind">${esc(d.kind)}</span><span class="when">${esc(d.when)}</span><span class="mono hint">${esc(d.id)} · GHL "${esc(d.ghlStep)}"</span>${extra}</div>`;
+  // builder → GHL direction: show what to type in GHL (GHL's words struck, the builder's added)
+  const toGhl = f => ({ ...f, diff: R.wordDiff(f.ghl, f.preview) });
   h += `<h5 class="rvh">Changed messages</h5>`;
-  h += P.diffs.length ? `<p><b>${P.diffs.length} message${P.diffs.length === 1 ? ' differs' : 's differ'} from GHL</b> (${P.matched.length} match).</p><ul class="rvdiffs">${P.diffs.map(d => `<li><div class="rvmh"><span class="kind">${esc(d.kind)}</span><span class="when">${esc(d.when)}</span><span class="mono hint">${esc(d.id)} · GHL "${esc(d.ghlStep)}"</span></div>${d.fields.map(f => diffLine(f, esc)).join('')}</li>`).join('')}</ul>
-      <div class="btnrow">${btn('rvapply', L.busy === 'apply' ? 'Applying…' : `Apply ${P.diffs.length} change${P.diffs.length === 1 ? '' : 's'} to the preview`, ICON.tick, 'primary')}</div>`
-    : `<p class="okline">${ICON.tick} ${P.matched.length} message${P.matched.length === 1 ? '' : 's'} match GHL.</p>`;
+  h += `<p class="okline">${ICON.tick} ${P.matched.length} message${P.matched.length === 1 ? '' : 's'} match GHL.</p>`;
+  if (P.diffs.length) h += `<p><b>Changed in GHL (${P.diffs.length})</b>: bring GHL's wording into the preview.</p><ul class="rvdiffs">${P.diffs.map(d => `<li>${head(d, '<span class="chip info">Changed in GHL</span>')}${d.fields.map(f => diffLine(f, esc)).join('')}</li>`).join('')}</ul>
+      <div class="btnrow">${btn('rvapply', L.busy === 'apply' ? 'Applying…' : `Apply ${P.diffs.length} change${P.diffs.length === 1 ? '' : 's'} from GHL`, ICON.tick, 'primary')}</div>`;
+  if (P.tailored.length) h += `<p><b>Tailored in builder, not in GHL yet (${P.tailored.length})</b>: update GHL to this wording. Nothing to apply here; it's on the "Before go-live in GHL" list.</p><ul class="rvdiffs">${P.tailored.map(d => `<li>${head(d, '<span class="chip warn">Update GHL</span>')}${d.fields.map(f => diffLine(toGhl(f), esc)).join('')}</li>`).join('')}</ul>`;
+  if (P.conflicts.length) h += `<p><b>Changed in both (${P.conflicts.length})</b>: the builder and GHL each changed it. Pick one.</p><ul class="rvdiffs">${P.conflicts.map((d, i) => `<li>${head(d, '<span class="chip bad">Changed in both</span>')}${d.fields.map(f => diffLine(f, esc)).join('')}<div class="btnrow">${btn('rvusegh', 'Use GHL wording', ICON.tick, 'sm', ` data-i="${i}"`)}${btn('rvkeep', "Keep the builder's (update GHL)", ICON.pencil, 'sm', ` data-i="${i}"`)}</div></li>`).join('')}</ul>`;
   if (P.missing.length) h += `<p class="hint">${P.missing.length === 1 ? '1 automation wasn\'t' : `${P.missing.length} automations weren't`} found in GHL, so ${P.missing.length === 1 ? 'its messages weren\'t' : 'their messages weren\'t'} compared: see Removed / renamed below.</p>`;
   if (P.newMessages.length || P.removedMessages.length) {
     h += `<p class="hint">Inside the workflows already in the package:</p><ul class="rvdiffs">`
@@ -376,7 +392,8 @@ export function reviewCardHtml(r) {
         <div class="btnrow">${btn('rvcompare', 'Compare with the preview', ICON.sync)}</div>
         ${L.pasteError ? `<div class="errbox" role="alert">${esc(L.pasteError)}</div>` : ''}
         ${P ? pasteResultsHtml(r, L, btn) : ''}</details>`;
-      if (pkg.checklist?.length) body += `<details class="rvsub"><summary>Before go-live in GHL (${pkg.checklist.length})</summary><ul class="checklist">${pkg.checklist.map(c => `<li>${esc(c.text)}</li>`).join('')}</ul></details>`;
+      const todos = G.ghlTodos(pkg), golive = [...todos.map(t => t.text), ...(pkg.checklist || []).map(c => c.text)];
+      if (golive.length) body += `<details class="rvsub"${todos.length ? ' open' : ''}><summary>Before go-live in GHL (${golive.length}${todos.length ? ` · ${todos.length} to update in GHL` : ''})</summary><ul class="checklist">${golive.map(t => `<li${t.startsWith('Update GHL:') ? ' class="todo"' : ''}>${esc(t)}</li>`).join('')}</ul></details>`;
       const hist = v.history || [];
       if (hist.length) body += `<details class="rvsub"><summary>History (${hist.length})</summary><ol class="rvhist">${hist.map(h => `<li><div class="rvmh"><b>${esc(new Date(h.at).toLocaleString())}</b><span>${esc(h.by || '')}</span><span class="hint">${esc((h.reasons || []).join(' · '))}</span></div>${h.total != null && !h.messages?.length ? `<p class="hint">First publish: ${h.total} messages sent for review.</p>` : h.messages?.length ? `<ul>${h.messages.map(m => `<li><span class="mono hint">${esc(m.id)}</span> ${m.change === 'changed' ? `<del>${esc(trim(m.old))}</del> → <ins>${esc(trim(m.new))}</ins>` : m.change === 'added' ? `<ins>added</ins> ${esc(trim(m.new))}` : `<del>removed</del> ${esc(trim(m.old))}`}</li>`).join('')}</ul>` : '<p class="hint">No message changes.</p>'}</li>`).join('')}</ol></details>`;
       const blockers = G.publishBlockers(pkg);
@@ -416,6 +433,7 @@ export function onReviewAct(act, el) {
     rveditcancel: () => { L.edit = null; paint(id); }, rveditsave: () => saveEdit(id, el.dataset.m),
     rvwho: () => { const v = (document.getElementById(`rvWho-${id}`)?.value || '').trim(); if (!v) { D.toast('Type your name first'); return; } D.setWho(v); D.toast(`Saved: ${v}`); paint(id); },
     rvcopyscript: () => D.copy(consoleScript(), 'Copy-workflows script'), rvcompare: () => comparePaste(id), rvapply: () => applyPaste(id),
+    rvusegh: () => useGhl(id, Number(el.dataset.i)), rvkeep: () => keepBuilder(id, Number(el.dataset.i)),
     rvaddwf: () => addWorkflows(id, [el.dataset.w]), rvaddall: () => addWorkflows(id, L.paste.newWorkflows.build.map(w => w.id || w.name)),
     rvaddmsg: () => addMsg(id, Number(el.dataset.i)), rvrmmsg: () => removeMsg(id, el.dataset.m), rvrmwf: () => removeWf(id, el.dataset.a), rvmatch: () => matchWf(id, el.dataset.a),
     rvothers: () => { L.showOthers = el.checked; paint(id); }, rvsummary: () => saveSummary(id, el.dataset.a), rvaddq: () => addQ(id, el.dataset.a)

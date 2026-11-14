@@ -9,7 +9,7 @@
 // The GHL ids/names live in the package details (pkg.ghlLinks, pkg.workflows[].ghlWorkflowId), not in the published files.
 import {
   parseGhlPaste, ghlToChips, knownGhl, wordDiff, patchWords, words, editMessage, allMessages, stepOf, validatePackage,
-  nextVersion, GHL_CHIPS, dateTexts
+  nextVersion, GHL_CHIPS, dateTexts, baseText
 } from './review.js';
 
 export const DEFAULT_BUILD_FOLDER = 'GHL Build (Andrew Cass)';
@@ -123,11 +123,38 @@ export function matchMessages(pkg, mine, nodes, firm) {
   return { pairs, newNodes: nodes.filter(n => !usedN.has(n)), removed: mine.filter(m => !usedM.has(m)) };
 }
 
+// ---------- who changed a message ----------
+const same = (a, b) => words(a).join(' ') === words(b).join(' ');
+// The GHL wording the builder last knew (pkg.ghlBase). For a package made before ghlBase existed, the record's History:
+// if GHL still has the wording a builder edit replaced, the change came from the builder.
+export function direction(pkg, rec, m, t) {
+  const base = pkg.ghlBase?.[m.id];
+  if (base) {
+    const ghlChanged = !same(t.text, base.text) || (m.kind === 'Email' && base.subject != null && !same(t.subject, base.subject));
+    const builderChanged = !same(msgText(m), base.text) || (m.kind === 'Email' && base.subject != null && !same(m.subject, base.subject));
+    return ghlChanged && builderChanged ? 'both' : builderChanged ? 'builder' : 'ghl';
+  }
+  const ghlOld = `${t.subject ? `${t.subject} · ` : ''}${m.kind === 'Alert' ? `Everyone on your team gets this text: ${t.text}` : t.text}`;
+  const edits = [...(rec?.review?.history || [])].filter(h => (h.reasons || []).includes('kickoff edit'));
+  const flat = t => words(t).join(' ').slice(0, 250);   // History keeps up to 400 characters of each wording
+  for (const h of edits) for (const x of h.messages || []) if (x.id === m.id && x.change === 'changed' && flat(x.old) === flat(ghlOld)) return 'builder';
+  return 'ghl';
+}
+// Messages whose preview wording isn't in GHL yet (builder edits, template resyncs): the "Update GHL" lines.
+export function ghlTodos(pkg) {
+  const out = [];
+  for (const sec of pkg.files?.messages?.sections || []) for (const m of sec.msgs || []) {
+    const b = pkg.ghlBase?.[m.id]; if (!b) continue;
+    if (!same(msgText(m), b.text) || (m.kind === 'Email' && b.subject != null && !same(m.subject, b.subject))) out.push({ id: m.id, text: `Update GHL: "${sec.title}" · ${m.kind} · ${m.when}: the wording was changed in the builder` });
+  }
+  return out;
+}
+
 // ---------- compare ----------
 export function ghlDiff(pkg, paste, rec = {}) {
   const P = parseGhlPaste(typeof paste === 'string' ? paste : JSON.stringify(paste));
   const firm = pkg.firmName || pkg.files.data.client.name;
-  const res = { warnings: [], diffs: [], matched: [], newMessages: [], removedMessages: [], newWorkflows: { build: [], other: [] }, missing: [], links: [], paste: P, buildFolders: [] };
+  const res = { warnings: [], diffs: [], tailored: [], conflicts: [], matched: [], newMessages: [], removedMessages: [], newWorkflows: { build: [], other: [] }, missing: [], links: [], paste: P, buildFolders: [] };
   if (rec.locationId && P.locationId && P.locationId !== rec.locationId) { res.warnings.push(`These workflows were copied from location ${P.locationId}, not this client's (${rec.locationId}). Nothing was compared.`); return res; }
   const msgs = allMessages(pkg), usedWf = new Set();
   for (const w of pkg.workflows || []) {
@@ -142,11 +169,15 @@ export function ghlDiff(pkg, paste, rec = {}) {
     const tl = timeline(g);
     const { pairs, newNodes, removed } = matchMessages(pkg, mine, nodes, firm);
     for (const [m, n] of pairs) {
-      res.links.push({ id: m.id, stepId: n.id || null, name: n.name, workflowId: g.id || null });
       const t = ghlTexts(n, firm), cur = msgText(m), fields = [];
-      if (words(cur).join(' ') !== words(t.text).join(' ')) fields.push({ field: 'text', preview: cur, ghl: t.text, diff: wordDiff(cur, t.text) });
-      if (m.kind === 'Email' && words(m.subject).join(' ') !== words(t.subject).join(' ')) fields.push({ field: 'subject', preview: m.subject, ghl: t.subject, diff: wordDiff(m.subject, t.subject) });
-      if (fields.length) res.diffs.push({ id: m.id, kind: m.kind, when: m.when, ghlStep: n.name, fields }); else res.matched.push(m.id);
+      res.links.push({ id: m.id, stepId: n.id || null, name: n.name, workflowId: g.id || null, ghl: { text: t.text, ...(t.subject != null ? { subject: t.subject } : {}) } });
+      if (!same(cur, t.text)) fields.push({ field: 'text', preview: cur, ghl: t.text, diff: wordDiff(cur, t.text) });
+      if (m.kind === 'Email' && !same(m.subject, t.subject)) fields.push({ field: 'subject', preview: m.subject, ghl: t.subject, diff: wordDiff(m.subject, t.subject) });
+      if (!fields.length) { res.matched.push(m.id); continue; }
+      // Who changed it? GHL (→ Apply), the builder (→ update GHL, no Apply) or both (→ choose).
+      const who = direction(pkg, rec, m, t);
+      const d = { id: m.id, kind: m.kind, when: m.when, ghlStep: n.name, fields, who };
+      (who === 'builder' ? res.tailored : who === 'both' ? res.conflicts : res.diffs).push(d);
     }
     for (const n of newNodes) {
       const t = ghlTexts(n, firm);
@@ -202,6 +233,8 @@ export function saveLinks(pkg, links = []) {
   const out = clone(pkg);
   out.ghlLinks = { ...(out.ghlLinks || {}) };
   for (const l of links) out.ghlLinks[l.id] = { stepId: l.stepId, name: l.name };
+  out.ghlBase = { ...(out.ghlBase || {}) };
+  for (const l of links) if (l.ghl) out.ghlBase[l.id] = { ...l.ghl };   // what GHL says now
   for (const l of links) { const w = out.workflows?.find(x => l.id.startsWith(`${x.automation}.`)); if (w && l.workflowId && !w.ghlWorkflowId) w.ghlWorkflowId = l.workflowId; }
   return out;
 }
@@ -227,7 +260,7 @@ export function addWorkflow(pkg, g, { now = new Date(), by = '' } = {}) {
   const sum = summarizeWorkflow(g, firm);
   const trig = sum.triggers.length ? sum.triggers.join(' or ') : 'the workflow is triggered in GHL';
   const steps = [{ id: 's1', day: 'Day 0', type: 'start', when: 'Start', title: `Starts when: ${trig}`, body: `This automation starts when: ${trig}.`, ...(sum.status === 'Draft' ? { note: 'Still in Draft in GHL, so nothing is being sent yet. It goes live once you approve.' } : {}) }];
-  const msgsOut = [], counter = { Text: 0, Email: 0, Alert: 0 }, links = {}, blanks = new Set(out.files.messages.blanks || []);
+  const msgsOut = [], counter = { Text: 0, Email: 0, Alert: 0 }, links = {}, bases = {}, blanks = new Set(out.files.messages.blanks || []);
   nodes.forEach((n, i) => {
     const k = ghlKind(n), t = ghlTexts(n, firm), when = tl.get(n), sid = `s${i + 2}`;
     counter[k]++;
@@ -246,6 +279,7 @@ export function addWorkflow(pkg, g, { now = new Date(), by = '' } = {}) {
       msgsOut.push({ id: `${id}.${sid}`, kind: 'Text', when: when.list, text: t.text });
     }
     if (n.id || n.name) links[`${id}.${sid}`] = { stepId: n.id || null, name: n.name };
+    bases[`${id}.${sid}`] = { text: t.text, ...(k === 'Email' ? { subject: t.subject } : {}) };
   });
   steps.push({ id: `s${nodes.length + 2}`, day: steps[steps.length - 1].day, type: 'end', when: 'End', gap: 'Then', title: 'The automation ends', body: 'Nothing more is sent from this automation.' });
   const lead = [counter.Text && plural(counter.Text, 'text'), counter.Email && plural(counter.Email, 'email')].filter(Boolean).join(', ') || 'Nothing';
@@ -259,6 +293,7 @@ export function addWorkflow(pkg, g, { now = new Date(), by = '' } = {}) {
   if (blanks.size) out.files.messages.blanks = [...blanks];
   out.workflows = [...(out.workflows || []), { automation: id, ghl: g.name, ghlWorkflowId: g.id || null, lead: lead }];
   out.ghlLinks = { ...(out.ghlLinks || {}), ...links };
+  out.ghlBase = { ...(out.ghlBase || {}), ...bases };
   if (sum.status === 'Draft') out.checklist = [...(out.checklist || []), { text: `Switch on "${g.name}" in GHL after approval (it's still Draft)`, done: false }];
   return { pkg: logChange(out, { by, reason: 'new workflow', automation: id }), id };
 }
@@ -316,6 +351,7 @@ export function addMessage(pkg, nm, { by = '' } = {}) {
   unknownFields(`${nm.subject || ''} ${nm.text || ''}`); // (chips already converted)
   touch(out, a);
   if (nm.stepId || nm.ghlStep) out.ghlLinks = { ...(out.ghlLinks || {}), [id]: { stepId: nm.stepId || null, name: nm.ghlStep || null } };
+  out.ghlBase = { ...(out.ghlBase || {}), [id]: { text: nm.text, ...(nm.kind === 'Email' ? { subject: nm.subject } : {}) } };
   return logChange(out, { by, reason: 'GHL resync', message: id, change: 'added' });
 }
 export function removeMessage(pkg, msgId, responses, { by = '' } = {}) {

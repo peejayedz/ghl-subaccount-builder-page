@@ -135,6 +135,9 @@ export function generatePackage(tpl, rec, { code, now = new Date(), by = '' } = 
     agency: vals.AGENCY,
     firmName: vals.FIRM_NAME,
     workflows: (tpl.template.workflows || []).map(w => ({ ...w })), // automation id ↔ GHL workflow name (GHL resync)
+    // What GHL says for each message, as far as the builder knows (the template = GHL, checked by the fidelity test).
+    // Compare uses it to tell who changed a message: the builder (update GHL) or GHL (Apply).
+    ghlBase: ghlBaseOf(files),
     templateHashes: templateHashes(files), // what each automation looked like in the template (resync: did the TEMPLATE change it?)
     carryOver: (tpl.template.carryOver || []).map(c => ({ ...c })),
     checklist: (tpl.template.checklist || []).map(text => ({ text, done: false })), // per-client GHL to-dos before go-live
@@ -271,8 +274,15 @@ export function findExisting(firmName, dataFiles) {
 // ---------- tailoring (kickoff edits) ----------
 // Changes one message's wording in BOTH the data file and the messages file, so they never drift.
 // A template automation that is edited becomes "customised": template resyncs then leave it alone.
+// GHL's wording per message as the builder last knew it ({text, subject}; team alerts without the "Everyone…" line).
+export const baseText = m => (m.kind === 'Alert' ? String(m.text).replace(/^Everyone on your team gets this text:\s*/, '') : m.text);
+export function ghlBaseOf(files) {
+  return Object.fromEntries((files.messages.sections || []).flatMap(s => s.msgs || []).map(m => [m.id, { text: baseText(m), ...(m.subject != null ? { subject: m.subject } : {}) }]));
+}
 export function editMessage(pkg, id, { subject, text }) {
   const out = clone(pkg), st = stepOf(out, id), m = allMessages(out).find(x => x.id === id);
+  // a package made before ghlBase existed: until now the preview was GHL's wording, so remember it before changing it
+  if (m && !(out.ghlBase && out.ghlBase[id])) out.ghlBase = { ...(out.ghlBase || {}), [id]: { text: baseText(m), ...(m.subject != null ? { subject: m.subject } : {}) } };
   if (!st || !m) throw new Error(`Message ${id} isn't in this package`);
   if (m.kind === 'Text') { st.sms = text; m.text = text; }
   else if (m.kind === 'Email') { if (subject != null) { st.email.subject = subject; m.subject = subject; } st.email.body = text; m.text = text; }
