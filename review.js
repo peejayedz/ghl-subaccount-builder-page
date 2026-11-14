@@ -374,11 +374,16 @@ export function patchWords(base, target) {
   const ops = []; let i = 0, j = 0;
   while (i < n || j < m) {
     if (i < n && j < m && A[i] === B[j]) { ops.push(['=', A[i]]); i++; j++; }
-    else if (j < m && (i === n || L[i][j + 1] >= L[i + 1][j])) { ops.push(['+', B[j]]); j++; }
+    else if (j < m && (i === n || L[i][j + 1] >= L[i + 1][j])) { ops.push(['+', B[j], j]); j++; }
     else { ops.push(['-', A[i]]); i++; }
   }
   // Rebuild from the base text's own units (each word + the whitespace after it). A run of changed words is
   // replaced as a block that keeps the whitespace after its last removed word (so a paragraph break survives).
+  // Words that are only ADDED take the spacing that follows them in the target (GHL) text, so a new line or
+  // paragraph stays one (S4: "test2" added on its own line after a signature).
+  const tt = String(target ?? '').match(/\S+|\s+/g) || [];
+  if (tt[0] && /^\s/.test(tt[0])) tt.shift();
+  const tws = []; for (let q = 0; q < tt.length; q += 2) tws.push(tt[q + 1] || '');
   const toks = String(base ?? '').match(/\S+|\s+/g) || [];
   const lead = toks[0] && /^\s/.test(toks[0]) ? toks.shift() : '';
   const units = []; for (let k = 0; k < toks.length; k += 2) units.push({ w: toks[k], ws: toks[k + 1] || '' });
@@ -386,8 +391,11 @@ export function patchWords(base, target) {
   while (k < ops.length) {
     if (ops[k][0] === '=') { out += units[u].w + units[u].ws; u++; k++; continue; }
     const del = [], ins = [];
-    while (k < ops.length && ops[k][0] !== '=') { if (ops[k][0] === '-') del.push(units[u++]); else ins.push(ops[k][1]); k++; }
-    if (ins.length) out += (out && !/\s$/.test(out) ? ' ' : '') + ins.join(' ') + (del.length ? del[del.length - 1].ws : (u < units.length ? ' ' : ''));
+    while (k < ops.length && ops[k][0] !== '=') { if (ops[k][0] === '-') del.push(units[u++]); else ins.push(ops[k]); k++; }
+    if (!ins.length) continue;
+    const lead2 = out && !/\s$/.test(out) ? ' ' : '';
+    if (del.length) out += lead2 + ins.map(x => x[1]).join(' ') + del[del.length - 1].ws;
+    else out += lead2 + ins.map((x, q) => x[1] + (q < ins.length - 1 ? (tws[x[2]] || ' ') : (u < units.length ? (tws[x[2]] || ' ') : ''))).join('');
   }
   return /\s$/.test(String(base ?? '')) ? out : out.replace(/\s+$/, '');
 }

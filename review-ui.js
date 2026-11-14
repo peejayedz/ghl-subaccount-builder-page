@@ -242,7 +242,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.g
 // ---------------------------------------------------------------- the card
 export function reviewCardHtml(r) {
   const { esc, ICON } = D, L = liveOf(r.id), v = r.review || {}, s = R.reviewState(r, L.tplLatest);
-  const btn = (act, label, icon, cls = '', extra = '') => `<button class="btn ${cls}" type="button" data-act="${act}" data-id="${esc(r.id)}"${extra}${L.busy ? ' disabled' : ''}>${icon || ''}<span>${label}</span></button>`;
+  const noName = !(D.who() || '').trim();
+  const btn = (act, label, icon, cls = '', extra = '') => `<button class="btn ${cls}" type="button" data-act="${act}" data-id="${esc(r.id)}"${extra}${L.busy || (noName && !act.startsWith('rvprev')) ? ' disabled' : ''}>${icon || ''}<span>${label}</span></button>`;
   const err = L.error ? `<div class="errbox" role="alert">${esc(L.error.message)}</div>` : (v.status === 'publish_failed' && v.error && !L.busy ? `<div class="errbox" role="alert">Publish stopped at <b>${esc(v.error.step)}</b>: ${esc(v.error.message)}</div>` : '');
   const linkRow = (label, url, what) => `<li><span class="lkname">${esc(label)}</span><a class="lkurl" href="${esc(url)}" target="_blank" rel="noopener" title="${esc(url)}">${esc(url.replace(/^https:\/\//, ''))}</a><span class="lkacts"><a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener" aria-label="Open ${esc(what)}">${ICON.ext}<span>Open</span></a><button class="btn sm" type="button" data-act="copytext" data-text="${esc(url)}" data-what="${esc(what)}" aria-label="Copy ${esc(what)}">${ICON.copy}<span>Copy</span></button></span></li>`;
   const links = v.links ? `<ul class="linklist rvlinks">${linkRow('A · Plan page (send this)', v.links.plan, 'Review link A')}${linkRow('B · Messages only (re-reviews)', v.links.messages, 'Review link B')}</ul>` : '';
@@ -295,6 +296,7 @@ export function reviewCardHtml(r) {
       if (v.status !== 'published') body += '<p class="hint">Publish = ready for Andy to send: commits the 3 files to automation-review, registers the client, runs a smoke test, then saves links A and B here.</p>';
     }
   }
+  if (noName) body = `<div class="warnbox rvwho"><label class="f">Your name (saved in this browser, so each change shows who made it)<span class="copyrow"><input id="rvWho-${esc(r.id)}" autocomplete="name" placeholder="e.g. PJ"><button class="btn primary sm" type="button" data-act="rvwho" data-id="${esc(r.id)}">Save name</button></span></label></div>${body}`;
   if (TEMPLATE_TEST()) body = `<div class="errbox"><b>Test template mode</b> (?tpltest=1): template updates here come from the builder's test-templates folder, not automation-review. Don't publish in this mode.</div>${body}`;
   return `<section class="panel rvcard" data-review="${esc(r.id)}" aria-live="polite">
     <div class="kpihead"><h4>Automation review</h4><span class="chip ${s.tone}" data-chip="reviewstate"><span class="dot"></span>${esc(s.label)}</span>${L.busy === 'publish' ? '<span class="hint">You can leave this page; GitHub keeps going.</span>' : ''}</div>
@@ -321,6 +323,7 @@ export function onReviewAct(act, el) {
     rvprevA: () => openPreview(id, 'A'), rvprevB: () => openPreview(id, 'B'), rvprevclose: () => { document.getElementById('rvOverlay').innerHTML = ''; },
     rvedit: () => { L.edit = el.dataset.m; paint(id); document.getElementById(`rvT-${el.dataset.m.replace(/[^a-z0-9]/gi, '_')}`)?.focus(); },
     rveditcancel: () => { L.edit = null; paint(id); }, rveditsave: () => saveEdit(id, el.dataset.m),
+    rvwho: () => { const v = (document.getElementById(`rvWho-${id}`)?.value || '').trim(); if (!v) { D.toast('Type your name first'); return; } D.setWho(v); D.toast(`Saved: ${v}`); paint(id); },
     rvcopyscript: () => D.copy(consoleScript(), 'Copy-workflows script'), rvcompare: () => comparePaste(id), rvapply: () => applyPaste(id)
   };
   if (!map[act]) return false;

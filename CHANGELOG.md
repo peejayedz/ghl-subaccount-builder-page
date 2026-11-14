@@ -5,6 +5,9 @@ v1.0.0 is released at deploy (Step 4); until then it is marked unreleased.
 
 ## [1.0.0] - unreleased
 
+- Fix: "Paste from GHL" → Apply put a newly added word on the same line as the next text (S4: "test2" added after a signature became "test2 Add to google calendar"). Added words now keep the line/paragraph they have in GHL; the preview's own line breaks stay as they were.
+- New: the Review card asks for your name once when this browser doesn't know it yet (changes were saved as "unknown"); its buttons stay off until it's saved.
+
 - Fix: "Copy workflows" listed every workflow twice (GHL's top-level list also returns the workflows inside folders). Each workflow is now copied once, with its folder name; a paste from the old version is cleaned up the same way.
 - Changed: editing the wording (or bringing in a GHL change) of an already-published automation gives it a new version, so the client re-checks just that automation; template resync no longer bumps it a second time. Template resync now only lists a tailored automation when the template itself changed it.
 - New (internal, S4 only): `?tpltest=1` loads a test template from the page's own `test-templates/` folder (red banner; Publish disabled). Removed after the S4 test.

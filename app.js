@@ -1185,6 +1185,6 @@ K.initKpi({ gh, saveRecord, record: id => state.records.find(x => x.id === id), 
   detailsOpen: () => ($('detBody') ? state.detailsId : null), paintDetails: () => paintDetails() });
 RV.initReview({ gh, saveRecord, savePackage, getPackage, getJSON, dispatch, record: id => state.records.find(x => x.id === id),
   setRecord: (id, rec) => { const k = state.records.findIndex(x => x.id === id); if (k >= 0) state.records[k] = rec; },
-  esc, ICON, toast, copy, who: () => whoName(), cfg: CFG, newRequestId: () => S.newRequestId(), paintList: () => paintList(), sleep, pollMs: POLL_MS,
+  esc, ICON, toast, copy, who: () => whoName(), setWho: n => store.set(WHO_KEY, String(n || '').trim() || null), cfg: CFG, newRequestId: () => S.newRequestId(), paintList: () => paintList(), sleep, pollMs: POLL_MS,
   detailsOpen: () => ($('detBody') ? state.detailsId : null), paintDetails: () => paintDetails() });
 boot();
