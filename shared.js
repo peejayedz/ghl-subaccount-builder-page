@@ -5,7 +5,7 @@
 import { ALL_TIMEZONE_IDS } from './timezones.js';
 import { BRANDS, checkLink } from './webforms.js';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 // ---------- option lists ----------
 export const PRACTICE = ['Personal Injury', 'Family Law', 'Criminal Defense', 'Immigration', 'Estate Planning', 'Employment', 'Bankruptcy', 'Business/Corporate', 'Other'];

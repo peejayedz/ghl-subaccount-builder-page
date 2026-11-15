@@ -44,6 +44,8 @@ export const KPI_STEPS = [
   ['menu', 'GHL menu link'],
   ['save', 'Saving the KPI link on the record'],
 ];
+// Short words for the folded "N steps done" line.
+const KPI_SHORT = { 'Checking the KPI firm list': 'firm list checked', 'Making the dashboard passphrase': 'passphrase', 'Starting the setup on GitHub': 'started', 'Waiting for the LeadPro Connector app': 'app found', 'Getting the firm\'s GHL token': 'token', 'Reading GHL and setting up the dashboard': 'pipelines read · dashboard created', 'First sync': 'first sync', 'GHL menu link': 'menu link', 'Saving the KPI link on the record': 'link saved' };
 const JOB_STEP = { prepare: 'app', token: 'token', setup: 'setup', 'first-sync': 'sync', 'menu-link': 'menu' };
 export const STEP_ERRORS = {
   'Check the firm list': 'The KPI setup refused this firm: the dashboard name or the location is already used by another firm. Check the KPI admin page, then Retry.',
@@ -70,6 +72,14 @@ export function kpiState(r) {
   if (k.status === 'setting_up') return { key: 'setting_up', label: 'Setting up', tone: 'info' };
   if (k.status === 'failed') return { key: 'failed', label: 'Setup failed', tone: 'bad' };
   return r.kpiRequested ? { key: 'requested', label: 'Requested', tone: 'info' } : { key: 'none', label: 'Not requested', tone: '' };
+}
+
+// "6 of 9 steps" for the Overview box: live steps, else rebuilt from the saved failed step. null when unknown.
+export function kpiProgress(r) {
+  const L = liveOf(r.id), k = r.kpi || {};
+  if (Object.keys(L.steps).length) return { done: KPI_STEPS.filter(([key]) => L.steps[key]?.st === 'ok').length, total: KPI_STEPS.length };
+  const i = k.status === 'failed' ? KPI_STEPS.findIndex(([x]) => x === k.error?.step) : -1;
+  return i < 0 ? null : { done: i, total: KPI_STEPS.length };
 }
 
 // ---------------------------------------------------------------- wiring (set by app.js)
@@ -228,8 +238,16 @@ function setKpiLink(x, slug, who) {
 export function kpiCardHtml(r, { where = 'details' } = {}) {
   const { esc, ICON } = D, L = liveOf(r.id), k = r.kpi || {}, s = kpiState(r);
   const running = L.running || (k.status === 'setting_up' && Object.keys(L.steps).length);
-  const showSteps = Object.keys(L.steps).length > 0;
-  const steps = showSteps ? `<ol class="steps kpisteps">${KPI_STEPS.map(([key, t, d]) => { const v = L.steps[key] || { st: 'pending' }; return `<li class="step ${v.st}${v.at && Date.now() - v.at < 700 ? ' just' : ''}" data-k="${key}"><span class="ic" aria-hidden="true">${v.st === 'ok' ? ICON.tick : v.st === 'fail' ? ICON.cross : v.st === 'warn' ? ICON.bang : ''}</span><span class="t">${esc(t)}</span><span class="d">${v.detail || (v.st === 'run' || v.st === 'pending' ? esc(d || '') : '')}</span></li>`; }).join('')}</ol>` : '';
+  // After a reload the live steps are gone: a failed setup rebuilds them from the saved failed step (earlier steps done, the rest not started).
+  const failStep = k.status === 'failed' && !Object.keys(L.steps).length && KPI_STEPS.some(([key]) => key === k.error?.step) ? k.error.step : null;
+  const SS = failStep ? Object.fromEntries(KPI_STEPS.map(([key], i) => [key, { st: i < KPI_STEPS.findIndex(([x]) => x === failStep) ? 'ok' : key === failStep ? 'fail' : 'pending' }])) : L.steps;
+  const showSteps = Object.keys(SS).length > 0;
+  // Progress bar "6 of 9 steps"; finished steps fold into one line (they stay in the page, hidden, until "Show all").
+  const okKeys = KPI_STEPS.filter(([key]) => SS[key]?.st === 'ok').map(([key]) => key);
+  const fold = okKeys.length >= 2 && !L.showAll;
+  const prog = showSteps ? `<div class="kprog"><div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="${KPI_STEPS.length}" aria-valuenow="${okKeys.length}" aria-label="KPI setup progress"><span style="width:${Math.round((okKeys.length / KPI_STEPS.length) * 100)}%"></span></div><span class="lbl2">${okKeys.length} of ${KPI_STEPS.length} steps</span></div>` : '';
+  const foldLine = fold ? `<li class="step ok folded"><span class="ic" aria-hidden="true">${ICON.tick}</span><span class="t">${okKeys.length} steps done</span><span class="d">${esc(KPI_STEPS.filter(([k]) => okKeys.includes(k)).map(([, t]) => KPI_SHORT[t] || t).join(' · '))} · <button class="linkbtn" type="button" data-act="kpishowsteps" data-id="${esc(r.id)}">Show all steps</button></span></li>` : '';
+  const steps = showSteps ? `<ol class="steps kpisteps">${foldLine}${KPI_STEPS.map(([key, t, d]) => { const v = SS[key] || { st: 'pending' }; return `<li class="step ${v.st}${v.at && Date.now() - v.at < 700 ? ' just' : ''}" data-k="${key}"${fold && v.st === 'ok' ? ' hidden' : ''}><span class="ic" aria-hidden="true">${v.st === 'ok' ? ICON.tick : v.st === 'fail' ? ICON.cross : v.st === 'warn' ? ICON.bang : ''}</span><span class="t">${esc(t)}</span><span class="d">${v.detail || (v.st === 'run' || v.st === 'pending' ? esc(d || '') : '')}</span></li>`; }).join('')}</ol>` : '';
   const pass = L.passphrase && !L.passHidden ? `<div class="passbox" id="kpiPass-${esc(r.id)}" role="group" aria-label="Dashboard passphrase">
       <p class="passlabel"><b>Dashboard passphrase</b> · shown once</p>
       <div class="copyrow"><code class="passval" aria-label="Dashboard passphrase" data-kpi-pass="${esc(r.id)}">${esc(L.passphrase)}</code><button class="btn primary" type="button" data-act="kpicopypass" data-id="${esc(r.id)}">${ICON.copy}<span>Copy</span></button></div>
@@ -244,19 +262,19 @@ export function kpiCardHtml(r, { where = 'details' } = {}) {
         : `<label class="f">Type the dashboard passphrase to build the link (not saved)<span class="copyrow"><input type="password" id="kpiTyped-${esc(r.id)}" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-act="kpicopylink" data-id="${esc(r.id)}">${ICON.copy}<span>Copy GHL link</span></button></span></label>`}
       <ol class="clicks"><li>In GHL (agency view): <b>Settings → Custom Menu Links → Create new</b>.</li><li>Title <b>KPI Dashboard</b>, any chart icon, paste the link as the URL.</li><li>Open in: <b>New tab</b>.</li><li>Show on: <b>sub-accounts → only ${esc(r.businessName)}</b> (not the agency, not all sub-accounts). Save.</li></ol></details>` : '';
   const err = L.error || (k.status === 'failed' ? k.error : null);
-  const errBox = err ? `<div class="errbox" role="alert">${esc(err.message)}${(L.runUrl || err.runUrl) ? ` <a href="${esc(L.runUrl || err.runUrl)}" target="_blank" rel="noopener">GitHub run</a>` : ''}</div>` : '';
+  const errBox = err ? `<div class="errbox" role="alert">${esc(err.message)}${(L.runUrl || err.runUrl) ? ` <a href="${esc(L.runUrl || err.runUrl)}" target="_blank" rel="noopener">GitHub run</a>` : ''}<p class="lost">Nothing is lost. Retry finishes what's missing.</p></div>` : '';
   let btn = '';
   if (!L.running) {
-    if (k.status === 'failed') btn = `<button class="btn primary" type="button" data-act="kpistart" data-id="${esc(r.id)}">${ICON.sync}<span>Retry KPI setup</span></button>`;
+    if (k.status === 'failed') btn = `<button class="btn primary" type="button" data-act="kpistart" data-id="${esc(r.id)}">${ICON.sync}<span>Retry KPI setup</span></button>${k.slug && err?.step === 'sync' ? `<a class="btn" href="${esc(KPI_PAGES)}admin/" target="_blank" rel="noopener"><span>Re-sync in KPI admin ↗</span></a>` : ''}`;
     else if (!k.status && r.status === 'ready') btn = `<button class="btn ${r.kpiRequested ? 'primary' : ''}" type="button" data-act="kpistart" data-id="${esc(r.id)}">${ICON.plus}<span>Set up KPI dashboard</span></button>`;
     else if (k.status === 'setting_up' && !showSteps) btn = `<button class="btn" type="button" data-act="kpistart" data-id="${esc(r.id)}">${ICON.sync}<span>Check / resume KPI setup</span></button>`;
   }
   const lead = !k.status && r.status !== 'ready' ? '<p class="hint">Available once the snapshot has loaded (use Refresh status on the list).</p>'
     : !k.status && !showSteps ? `<p class="hint">${r.kpiRequested ? `Requested · ${esc(r.practiceArea || '')}. ` : ''}Makes a LeadPro KPI dashboard for this sub-account: no token to paste; about 5–15 minutes.</p>`
     : k.status === 'setting_up' && !showSteps ? `<p class="hint">Started ${esc(k.startedAt ? new Date(k.startedAt).toLocaleString() : '')} by ${esc(k.by || '')}. Press the button to check on it; it never creates the firm twice.</p>` : '';
-  return `<section class="panel kpicard" data-kpi="${esc(r.id)}" aria-live="polite">
+  return `<section class="panel kpicard${err ? ' attention' : ''}" data-kpi="${esc(r.id)}" aria-live="polite">
     <div class="kpihead"><h4>KPI dashboard</h4><span class="chip ${s.tone}" data-chip="kpistate"><span class="dot"></span>${esc(s.label)}</span>${running ? '<span class="hint">You can leave this page; GitHub keeps going.</span>' : ''}</div>
-    ${lead}${steps}${pass}${errBox}${link}${review}${menu}${btn ? `<div class="btnrow">${btn}</div>` : ''}</section>`;
+    ${lead}${prog}${steps}${pass}${errBox}${link}${review}${menu}${btn ? `<div class="btnrow">${btn}</div>` : ''}</section>`;
 }
 export function paint(id) {
   const r = D.record(id); if (!r) return;
@@ -270,6 +288,7 @@ export function paint(id) {
 export function onKpiAct(act, el) {
   const id = el.dataset.id, L = liveOf(id), r = D.record(id); if (!r) return false;
   if (act === 'kpistart') { startKpi(id); return true; }
+  if (act === 'kpishowsteps') { L.showAll = true; paint(id); return true; }
   if (act === 'kpicopypass') { D.copy(L.passphrase, 'Passphrase'); return true; }
   if (act === 'kpihidepass') { L.passHidden = true; paint(id); return true; }
   if (act === 'kpicopylink') {

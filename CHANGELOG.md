@@ -1,9 +1,20 @@
 # Changelog
 
 All notable changes to the LFMP Sub-account Builder. Versions follow semantic versioning.
-v1.0.0 is released at deploy (Step 4); until then it is marked unreleased.
+This file is the developer history. The page's "What's new" shows the plain-language cards in `page/whats-new.json` and this text under "Technical details".
 
-## [1.0.0] - unreleased
+## [1.1.0] - 2026-11-15
+
+- New look (WC6 style in LFMP colours), the same as the KPI admin page: dark and light themes with **Auto · Light · Dark** (Auto follows the Mac or iPhone setting; the choice is remembered), one gold accent, Barlow Condensed headings, Inter text, square corners. The shared look is `page/lfmp-ui.css` + `page/fonts/` (SIL OFL 1.1, `page/fonts/OFL.txt`), copied unchanged from leadpro-kpi `admin/` (sha256 `6e67f091…a890fb`); builder-only styles stay in `page/app.css`.
+- Changed: top bar LFMP · Clients · KPI admin ↗ · Review ↗ (New sub-account is the gold button on the home and + New on phones), with the last refresh time, a version chip (gold dot = something new), the theme switch and ⋯ (Refresh list, Forget token, Lock). A simpler home: a smaller "Every client. One place." headline with the gold + New sub-account on the right, and one top line from the real records: N sub-accounts / N setting up / N need attention → (filters to Needs attention).
+- Changed: the Clients list shows the client (name, snapshot · created), one status per client (Needs attention / Setting up / Waiting to start / All set, rules in `page/status.js`); a problem is a link to the fix (e.g. "KPI sync failed →"), KPI · Review · Forms setup squares (empty = not requested), and two buttons: GHL ↗ and Details → (gold when it needs attention). The link column is gone from the list (links are in the details). Tabs All / Needs attention / In progress / Done, a "Show tests" box (test clients, e.g. "ZZ …" or "… Test …", are hidden by default; the choice is remembered in the browser) and the search, which still finds clients by name, domain, ticket #, link, email or location ID. Refresh list moved into ⋯ (More on phones).
+- Changed: details open as a side panel (full screen on phones) with Overview · KPI · Review · Forms tabs; a tab that needs attention shows a red count. Overview: the needs-attention box first (KPI: progress + Retry; Review / Forms: what failed + their tab), then every link (GHL, KPI, Review A/B, Zap, Webhook, Desk ticket, Mastersheet: Open ↗ · Copy · Edit, or Not set · Add), the setup squares and the folded Record details. Open in GHL, Copy location ID and Refresh are in the details header.
+- Changed: the KPI card shows "N of 9 steps" with a bar, folds finished steps into one line ("Show all steps"), and says "Nothing is lost. Retry finishes what's missing." on a failure, with Re-sync in KPI admin ↗ when the first sync failed.
+- New: What's new toast when the version is newer than the last one seen, and a What's new window of version cards (New / Improved / Fixed in plain words, Technical details below each). Fixes the old window's squeezed column and the "[1.0.0] - unreleased" heading.
+- New: phone layout: client cards, full-width tabs, a floating + New, and a bottom bar Clients · New · KPI · Review · More (theme, What's new, Forget token, Lock).
+- Tests: `tests/unit/status.test.mjs` (status, top line, the row's fix link); `tests/e2e/design.mjs` (screenshots + contrast, sideways scroll, focus, Esc); the browser tests follow the new layout (setup squares, GHL ↗ / Details →, Overview tab, Show tests, Refresh list in ⋯, theme switch, What's new).
+
+## [1.0.0] - 2026-11-14
 
 - Fix: Compare now tells who changed a message. **Changed in GHL** → Apply brings GHL's wording in. **Tailored in builder, not in GHL yet** → no Apply; it shows the wording to put into GHL and adds an "Update GHL: …" line to "Before go-live in GHL" (the line clears once GHL matches). **Changed in both** → pick "Use GHL wording" or "Keep the builder's". Before, a builder edit that wasn't in GHL yet was offered as a GHL change, and Apply undid it (S5).
 - Fix: the "Show other folders" checkbox was stretched across the card on phones.

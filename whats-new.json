@@ -1,0 +1,32 @@
+{
+  "_about": "What's new cards for the builder page (newest first). Plain words only: no file names, commits, secrets or workflow names. CHANGELOG.md is the developer history and shows under each card's Technical details.",
+  "versions": [
+    {
+      "version": "1.1.0",
+      "date": "Nov 15",
+      "title": "A new look, and every client at a glance",
+      "items": [
+        { "type": "new", "text": "One status per client (Needs attention, Setting up, Waiting to start, All set) with a KPI · Review · Forms line. A problem links straight to the fix, e.g. \"KPI sync failed →\"." },
+        { "type": "new", "text": "Details open in a side panel. Overview shows what needs a look (with Retry), every link and the setup; KPI, Review and Forms have their own tabs, with a red count on one that needs a look." },
+        { "type": "improved", "text": "A simpler home: GHL ↗ and Details → on every client, test clients hidden unless you tick Show tests, and Refresh list in the ⋯ menu." },
+        { "type": "improved", "text": "The same look as the KPI admin page, in dark or light. Auto follows your Mac or iPhone; your choice is remembered." },
+        { "type": "improved", "text": "The KPI card shows how far the setup got, keeps finished steps to one line, and says what Retry will do." },
+        { "type": "improved", "text": "On the iPhone: client cards, a bottom bar and a big + New button." },
+        { "type": "fixed", "text": "What's new is readable again: one card per version, newest first." }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "Nov 14",
+      "title": "Review packages, KPI dashboards and the whole builder",
+      "items": [
+        { "type": "new", "text": "Automation review packages: create a client's plan and messages from the LeadPro template, preview them, tailor the wording after the kickoff call, then publish them for Andy." },
+        { "type": "new", "text": "Bring changes made in GHL back into the review package, and see who changed a message: GHL, the builder, or both." },
+        { "type": "new", "text": "KPI dashboards set themselves up: tick the box and the dashboard, its mapping, the first sync and the GHL menu link are done for you." },
+        { "type": "new", "text": "Webforms tickets: set up the Zap, check the details and send the Desk ticket from the client's record." },
+        { "type": "new", "text": "Create GHL sub-accounts from a snapshot, with a live progress list and a record of every client and link." },
+        { "type": "fixed", "text": "Words brought in from GHL stay on their own line, and saves show who made them." }
+      ]
+    }
+  ]
+}

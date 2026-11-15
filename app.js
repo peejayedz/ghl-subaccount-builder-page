@@ -6,6 +6,7 @@ import * as W from './webforms.js';
 import * as K from './kpi.js';
 import * as RV from './review-ui.js';
 import * as RVR from './review.js';
+import * as ST from './status.js';
 
 const CFG = window.BUILDER_CONFIG;
 const API = CFG.api.replace(/\/$/, '');
@@ -40,17 +41,6 @@ const ICON = {
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>',
 };
-// Link buttons (Sub-accounts list + record Links section)
-const LINK_ICON = {
-  ghl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
-  zap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>',
-  webhook: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
-  ticket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 8V6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2a2 2 0 0 0 0 4v2a2 2 0 0 0 0 4v0a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a2 2 0 0 0 0-4V8Z"/></svg>',
-  kpi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
-  sheet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>',
-  review: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 11l2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="2"/></svg>',
-};
-LINK_ICON.reviewMessages = LINK_ICON.review;
 
 let lock = null, aesKey = null, ghToken = null;
 const state = { records: [], attention: [], snapshots: [], snapshotNames: {}, subaccounts: [], loaded: false, form: null, run: null,
@@ -64,10 +54,44 @@ async function copy(text, what = 'Copied') {
   catch { const ta = document.createElement('textarea'); ta.value = text; document.body.append(ta); ta.select(); try { document.execCommand('copy'); toast(`${what} copied`); } catch { toast("Couldn't copy: select it and copy by hand"); } ta.remove(); }
 }
 
-// theme
-function currentTheme() { return document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
-function paintThemeBtn() { for (const b of document.querySelectorAll('[data-act="theme"]')) { const d = currentTheme() === 'dark'; b.innerHTML = `${d ? ICON.sun : ICON.moon}<span class="tlabel">${d ? 'Light' : 'Dark'}</span>`; } }
-function toggleTheme() { const next = currentTheme() === 'dark' ? 'light' : 'dark'; document.documentElement.setAttribute('data-theme', next); store.set('lfmp-theme', next); paintThemeBtn(); }
+// theme: Auto · Light · Dark (same control and saved key "lfmp-theme" as the KPI admin page). Auto follows the device and saves nothing.
+const THEMES = [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']];
+const themeMode = () => document.documentElement.getAttribute('data-theme') || 'auto';
+const themeSegHtml = () => THEMES.map(([k, l], i) => `${i ? '<span class="sep" aria-hidden="true">·</span>' : ''}<button type="button" data-theme-set="${k}" aria-pressed="${k === themeMode()}" title="${k === 'auto' ? 'Follow this device\'s setting' : `Always ${l.toLowerCase()}`}">${l}</button>`).join('');
+function applyTheme(mode) {
+  if (!THEMES.some(t => t[0] === mode)) mode = 'auto';
+  if (mode === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', mode);
+  store.set('lfmp-theme', mode === 'auto' ? null : mode);
+  paintThemeBtn();
+}
+function paintThemeBtn() { for (const s of document.querySelectorAll('.themeseg')) s.innerHTML = themeSegHtml(); }
+
+// small ⋯ menus: one open at a time; outside click or Esc closes
+function closeMenus(except) {
+  for (const m of document.querySelectorAll('.menu:not([hidden])')) if (m !== except) { m.hidden = true; document.querySelector(`[data-menu="${m.id}"]`)?.setAttribute('aria-expanded', 'false'); }
+}
+
+// What's new (builder only): page/whats-new.json holds the plain cards; CHANGELOG.md stays the developer history.
+const NEWS_SEEN = 'sab-news-seen';
+let newsData = null;
+async function loadNews() {
+  if (newsData) return newsData;
+  try { const r = await fetch(`./whats-new.json?t=${Date.now()}`, { cache: 'no-store' }); newsData = r.ok ? await r.json() : { versions: [] }; } catch { newsData = { versions: [] }; }
+  return newsData;
+}
+const newsUnseen = () => RVR.semverNewer(S.VERSION, store.get(NEWS_SEEN) || '0.0.0');
+function paintNewsDot() { const d = $('newsDot'); if (d) d.hidden = !newsUnseen(); }
+function markNewsSeen() { store.set(NEWS_SEEN, S.VERSION); paintNewsDot(); $('wnToast').hidden = true; }
+const TYPE_LABEL = { new: 'New', improved: 'Improved', fixed: 'Fixed' };
+async function showNewsToast() {
+  if (!newsUnseen()) return;
+  const v = (await loadNews()).versions?.find(x => x.version === S.VERSION); if (!v || !newsUnseen()) return;
+  const more = v.items.length - 2;
+  $('wnToast').innerHTML = `<div class="wnmeta"><span class="wnbadge">Updated</span><span>v${esc(v.version)} · ${esc(v.date)}</span></div>
+    <h3>${esc(v.title)}</h3><ul>${v.items.slice(0, 2).map(i => `<li>${esc(i.text)}</li>`).join('')}${more > 0 ? `<li>…and ${more} more</li>` : ''}</ul>
+    <div class="btnrow"><button class="btn p" type="button" data-act="news">See what's new →</button><button class="btn" type="button" data-act="newsgot">Got it</button></div>`;
+  $('wnToast').hidden = false;
+}
 
 // ---------------------------------------------------------------- lock (same method as the KPI admin page)
 // PBKDF2-SHA256(password, salt, iterations) -> 64 bytes: 0-31 public verifier, 32-63 AES-GCM key for the token.
@@ -93,6 +117,8 @@ async function loadToken() {
 
 async function boot() {
   $('ver').textContent = `v${S.VERSION}`;
+  $('verChipText').textContent = `v${S.VERSION}`;
+  paintNewsDot();
   if ($('tokOwner')) $('tokOwner').textContent = OWNER;
   paintThemeBtn();
   for (const b of document.querySelectorAll('[data-eye]')) b.innerHTML = ICON.eye;
@@ -186,7 +212,7 @@ $('tokenForm').addEventListener('submit', async e => {
   finally { $('tokenGo').disabled = false; $('tokenGo').textContent = 'Connect and check'; }
 });
 
-function lockNow() { aesKey = null; ghToken = null; stopRun(); state.loaded = false; $('panel-list').innerHTML = ''; $('panel-new').innerHTML = ''; closeDialog(); show('lockView'); $('lockPw').value = ''; $('lockPw').focus(); }
+function lockNow() { aesKey = null; ghToken = null; stopRun(); closeMenus(); $('wnToast').hidden = true; state.loaded = false; $('panel-list').innerHTML = ''; $('panel-new').innerHTML = ''; closeDialog(); show('lockView'); $('lockPw').value = ''; $('lockPw').focus(); }
 
 // ---------------------------------------------------------------- GitHub API
 function ghError(status, msg, path) {
@@ -272,12 +298,25 @@ async function openApp() {
   show('appView');
   renderList(); renderNew();
   selectTab('list');
+  showNewsToast();
   await loadAll();
 }
 function selectTab(tab) {
-  for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
+  for (const t of document.querySelectorAll('.tab')) { t.setAttribute('aria-selected', String(t.dataset.tab === tab)); if (t.tagName === 'A') t.toggleAttribute('aria-current', t.dataset.tab === tab); if (t.dataset.tab === tab) t.setAttribute('aria-current', 'page'); }
+  for (const b of document.querySelectorAll('.bnav [data-tab]')) b.classList.toggle('on', b.dataset.tab === tab);
   $('panel-list').hidden = tab !== 'list'; $('panel-new').hidden = tab !== 'new';
+  $('fabNew').hidden = tab !== 'list';
 }
+
+function paintRefresh() {
+  if (!state.refreshedAt) return;
+  const d = new Date(state.refreshedAt), today = d.toDateString() === new Date().toDateString();
+  $('lastRefresh').textContent = d.toLocaleString('en-US', today ? { hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  $('lastRefresh').title = d.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const m = Math.round((Date.now() - state.refreshedAt) / 60000);
+  $('refreshAgo').textContent = m < 1 ? 'Just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+}
+setInterval(paintRefresh, 60e3);
 
 async function loadAll() {
   $('listBody').innerHTML = '<p class="muted" style="padding:24px 2px">Loading sub-accounts…</p>';
@@ -285,7 +324,7 @@ async function loadAll() {
     const [snaps, names, subs] = await Promise.all([getJSON('data/snapshots.json'), getJSON('data/snapshot-names.json'), getJSON('data/subaccounts.json'), loadDesk()]);
     state.snapshots = snaps || []; state.snapshotNames = names || {}; state.subaccounts = subs || [];
     await loadRecords();
-    state.loaded = true;
+    state.loaded = true; state.refreshedAt = Date.now(); paintRefresh();
     paintSnapshotSelect(); paintCsmSelect();
   } catch (e) { $('listBody').innerHTML = `<div class="errbox">${esc(e.message)}</div>`; }
 }
@@ -314,58 +353,86 @@ const snapName = (id, fallback) => state.snapshotNames[id] || fallback || state.
 const fmtDate = iso => { try { return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)); } catch { return iso; } };
 
 function renderList() {
+  if (state.showTests === undefined) state.showTests = store.get(SHOW_TESTS) === '1';
   $('panel-list').innerHTML = `
-    <div class="toolbar">
-      <input type="search" class="search" id="q" placeholder="Search name, domain, ticket #, link, email…" aria-label="Search sub-accounts">
-      <div class="controls"><button class="btn" type="button" data-act="reload">${ICON.sync} Refresh list</button><button class="btn primary" type="button" data-act="gonew">${ICON.plus} New sub-account</button></div>
+    <section class="hero hero2"><div><p class="ey">LFMP · Sub-account builder</p><h1 class="disp" id="heroTitle">Every client. <span class="g">One place.</span></h1></div>
+      <button class="btn p" type="button" data-act="gonew">${ICON.plus} New sub-account →</button></section>
+    <div class="strip" id="statStrip" role="group" aria-label="Summary"><span>Loading…</span></div>
+    <div class="listbar">
+      <div class="segscroll"><div class="seg" id="listTabs" role="group" aria-label="Show"></div></div>
+      <label class="showtests"><input type="checkbox" id="showTests"${state.showTests ? ' checked' : ''}> Show tests</label>
+      <input type="search" class="search" id="q" placeholder="Search clients…" title="Name, domain, ticket #, link, email, location ID…" aria-label="Search clients (name, domain, ticket #, link)">
     </div>
     <div id="listBody"></div>`;
   $('q').addEventListener('input', paintList);
+  $('showTests').addEventListener('change', e => { state.showTests = e.target.checked; store.set(SHOW_TESTS, state.showTests ? '1' : null); paintList(); });
+  $('listTabs').addEventListener('click', e => { const b = e.target.closest('[data-ltab]'); if (b) { state.listTab = b.dataset.ltab; paintList(); } });
+  $('statStrip').addEventListener('click', e => { const b = e.target.closest('[data-ltab]'); if (b) { state.listTab = state.listTab === b.dataset.ltab ? 'all' : b.dataset.ltab; paintList(); } });
 }
+const SHOW_TESTS = 'sab-show-tests';
+const isTest = r => /\btest\b|^zz\b/i.test(r.businessName || '');
+// Status + setup squares for one record (page/status.js).
+function rowInfo(r) {
+  const kpi = K.kpiState(r), review = RV_STATE(r), forms = W.webformsStatus(r);
+  const parts = ST.setupParts(r, { kpi, review, forms });
+  return { r, parts, kpi, review, forms, reviewKey: review.key, overall: ST.overallStatus(r, { kpi, review, forms }), problem: ST.problem(r, { kpi, review, forms }) };
+}
+const showInTab = (tab, x) => ST.inTab(tab, x.overall);
+function setupHtml(x) {
+  const label = { kpi: ['KPI', x.kpi.label], review: ['Review', x.review.label], forms: ['Forms', x.forms.label] };
+  const chipName = { kpi: 'kpi', review: 'review', forms: 'webforms' };
+  const pre = { kpi: 'KPI', review: 'Review', forms: 'Webforms' };
+  return `<div class="setup" aria-label="Setup">${x.parts.map(p => `<span class="sp ${p.state}" data-chip="${chipName[p.name]}" title="${esc(`${pre[p.name]}: ${label[p.name][1]}`)}" aria-label="${esc(`${pre[p.name]}: ${label[p.name][1]}`)}">${label[p.name][0]}</span>`).join('')}</div>`;
+}
+function rowHtml(x) {
+  const r = x.r, o = x.overall, bad = o.key === 'attention';
+  return `<div class="row" data-rec="${esc(r.id)}">
+      <div class="rname"><h3>${esc(r.businessName)}</h3>
+        <p class="meta"><span>${esc(snapName(r.snapshot?.id, r.snapshot?.name))}</span><span title="${esc(fmtDate(r.createdAt))}">Created ${esc(shortDate(r.createdAt))}</span>${isTest(r) ? '<span>Test</span>' : ''}</p></div>
+      <div class="rst"><span class="stag rstag tone-${o.tone}" data-chip="status" title="${esc((S.RECORD_STATUS[r.status] || {}).label || r.status || '')}">${esc(o.label)}</span>
+        ${x.problem ? `<button class="fixlink" type="button" data-act="details" data-id="${esc(r.id)}">${esc(x.problem.text)} →</button>` : ''}</div>
+      ${setupHtml(x)}
+      <div class="ractions">
+        <a class="btn sm" href="${esc(r.links?.ghl || W.ghlLinkFor(r.locationId))}" target="_blank" rel="noopener" aria-label="Open ${esc(r.businessName)} in GHL">GHL ↗</a>
+        <button class="btn sm${bad ? ' p' : ''}" type="button" data-act="details" data-id="${esc(r.id)}" aria-label="Details for ${esc(r.businessName)}">Details →</button>
+      </div>
+      <div class="rstatus" id="rs-${esc(r.id)}">${r.lastStatusCheck && !r.lastStatusCheck.ok ? `<span class="chip bad">Last check failed</span> ${esc(r.lastStatusCheck.message)}` : ''}</div>
+    </div>`;
+}
+const shortDate = iso => { try { return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }).format(new Date(iso)); } catch { return ''; } };
 function statusChip(rec) { const s = S.RECORD_STATUS[rec.status] || { label: rec.status || 'Unknown', tone: '' }; return `<span class="chip ${s.tone}" data-chip="status"><span class="dot"></span>${esc(s.label)}${rec.status === 'snapshot_loading' && rec.snapshotProgress?.percent ? ` · ${rec.snapshotProgress.percent}%` : ''}</span>`; }
-const kpiChip = r => { const s = K.kpiState(r); return `<span class="chip ${s.tone}" data-chip="kpi">KPI: ${esc(s.label)}</span>`; };
-const reviewChip = r => { const s = RV_STATE(r); return `<span class="chip ${s.tone}" data-chip="review">Review: ${esc(s.label)}</span>`; };
 const RV_STATE = r => RVR.reviewState(r, RV.liveOf(r.id).tplLatest);
-const webformsChip = r => { const s = W.webformsStatus(r); return `<span class="chip ${s.tone}" data-chip="webforms">Webforms: ${esc(s.label)}</span>`; };
-// Compact row of link buttons: present = opens in a new tab; missing = greyed with what's missing.
-function linkBar(r) {
-  const l = W.recordLinks(r);
-  return `<div class="linkbar" role="group" aria-label="Links">${W.LINKS.filter(k => !k.noButton).map(k => (l[k.key]
-    ? `<a class="lk" href="${esc(l[k.key])}" target="_blank" rel="noopener" data-link="${k.key}" title="Open ${esc(k.label)}">${LINK_ICON[k.key]}<span>${k.short}</span></a>`
-    : `<span class="lk off" data-link="${k.key}" title="${esc(k.missing)}" aria-label="${esc(`${k.short}: ${k.missing}`)}" aria-disabled="true" tabindex="0">${LINK_ICON[k.key]}<span>${k.short}</span></span>`)).join('')}</div>`;
-}
 const runLabel = r =>({ failed: ['Failed', 'bad'], duplicate: ['Stopped: similar name exists', 'warn'], snapshot_still_loading: ['Snapshot loading', 'warn'] }[r.status] || ['In progress', 'info']);
 
 function paintList() {
   const body = $('listBody'); if (!body) return;
-  $('recCount').textContent = state.records.length;
+
   const q = S.normName($('q')?.value || '');
   const hay = r => S.normName([r.businessName, snapName(r.snapshot?.id, r.snapshot?.name), r.createdBy, r.locationId, r.submitted?.email, r.submitted?.city,
     r.webforms?.domain, W.ticketOf(r)?.id, r.csm?.name, ...Object.values(W.recordLinks(r))].join(' '));
-  const recs = q ? state.records.filter(r => hay(r).includes(q)) : state.records;
+  const every = state.records.map(rowInfo);
+  const all = state.showTests ? every : every.filter(x => !isTest(x.r));   // test clients are hidden unless "Show tests" is on
+  const tab = state.listTab || 'all';
+  const match = x => !q || hay(x.r).includes(q);
+  const shown = all.filter(x => match(x) && showInTab(tab, x));
+  const hiddenTests = state.showTests ? 0 : every.filter(x => isTest(x.r) && match(x) && showInTab(tab, x)).length;
+  // top line (real records): N sub-accounts / N setting up / N need attention → (filters to Needs attention)
+  const s = ST.stats(all);
+  $('recCount').textContent = all.length;   // same count as the top line (test clients only when shown)
+  $('statStrip').innerHTML = `<span>${s.total} sub-account${s.total === 1 ? '' : 's'}</span><span>${s.settingUp} setting up</span><button type="button" class="${s.attention ? 'hot' : ''}" data-ltab="attention" aria-pressed="${tab === 'attention'}">${s.attention} need${s.attention === 1 ? 's' : ''} attention →</button>`;
+  $('listTabs').innerHTML = ST.TABS.map(([k, l, short]) => `<button type="button" data-ltab="${k}" aria-pressed="${tab === k}"><span class="wl">${l}</span><span class="n">${all.filter(x => ST.inTab(k, x.overall)).length}</span></button>`).join('');
+  if (matchMedia('(max-width:760px)').matches) for (const b of $('listTabs').querySelectorAll('[data-ltab]')) b.querySelector('.wl').textContent = ST.TABS.find(t => t[0] === b.dataset.ltab)[2];
   let html = '';
   if (state.attention.length) {
     html += `<p class="sectionlabel">In progress or needs attention</p><div class="attn">${state.attention.map(r => { const [l, t] = runLabel(r); return `<div class="row" data-run="${esc(r.requestId)}"><div><h3>${esc(r.businessName || 'Unnamed')}</h3><p class="meta"><span>Started ${esc(fmtDate(r.startedAt))}</span>${r.payload?.createdBy ? `<span>by ${esc(r.payload.createdBy)}</span>` : ''}</p><div class="chips"><span class="chip ${t}"><span class="dot"></span>${esc(l)}</span></div></div><div class="acts"><button class="btn" type="button" data-act="viewrun" data-id="${esc(r.requestId)}">View progress</button></div></div>`; }).join('')}</div>`;
   }
   if (!state.records.length) {
-    html += `<div class="empty" id="emptyState"><h2>No sub-accounts yet</h2><p class="sub" style="margin:6px 0 16px">Sub-accounts created with this builder are listed here.</p><button class="btn primary big" type="button" data-act="gonew">${ICON.plus} Create your first sub-account</button></div>`;
-  } else if (!recs.length) {
-    html += `<div class="empty">No sub-accounts match “${esc($('q').value)}”.</div>`;
+    html += `<div class="empty" id="emptyState"><h2>No sub-accounts yet</h2><p class="sub">Sub-accounts created with this builder are listed here.</p><button class="btn primary big" type="button" data-act="gonew">${ICON.plus} Create your first sub-account</button></div>`;
+  } else if (!shown.length) {
+    html += `<div class="empty">${q ? `No sub-accounts match “${esc($('q').value)}”` : 'No clients here'}${tab !== 'all' ? ' in this view' : ''}. ${tab !== 'all' ? '<button class="linkbtn" type="button" data-ltabset="all">Show all</button>' : ''}${hiddenTests ? ` <button class="linkbtn" type="button" data-act="showtests">Show ${hiddenTests} hidden test client${hiddenTests === 1 ? '' : 's'}</button>` : ''}</div>`;
   } else {
     if (state.attention.length) html += '<p class="sectionlabel">Created</p>';
-    html += `<div class="list" id="recList">${recs.map(r => `<div class="row" data-rec="${esc(r.id)}">
-      <div><h3>${esc(r.businessName)}</h3>
-        <p class="meta"><span>${esc(snapName(r.snapshot?.id, r.snapshot?.name))}</span>${recTz(r) ? `<span class="tzmeta" title="${esc(recTz(r))}">${esc(S.tzLabel(recTz(r)))}</span>` : ''}<span>Created ${esc(fmtDate(r.createdAt))}</span><span>by ${esc(r.createdBy || '—')}</span></p>
-        <div class="chips">${statusChip(r)}${kpiChip(r)}${reviewChip(r)}${webformsChip(r)}</div>
-        ${linkBar(r)}</div>
-      <div class="acts">
-        <a class="btn" href="${esc(r.links?.ghl)}" target="_blank" rel="noopener">${ICON.ext} Open in GHL</a>
-        <button class="btn" type="button" data-act="copyid" data-id="${esc(r.locationId)}">${ICON.copy} Copy location ID</button>
-        <button class="btn" type="button" data-act="details" data-id="${esc(r.id)}">View details</button>
-        <button class="btn" type="button" data-act="refresh" data-id="${esc(r.id)}">${ICON.sync} Refresh status</button>
-      </div>
-      <div class="rstatus" id="rs-${esc(r.id)}">${r.lastStatusCheck && !r.lastStatusCheck.ok ? `<span class="chip bad">Last check failed</span> ${esc(r.lastStatusCheck.message)}` : ''}</div>
-    </div>`).join('')}</div>`;
+    html += `<div class="ctable"><div class="chead" aria-hidden="true"><span>Client</span><span>Status</span><span>Setup</span><span></span></div><div class="list" id="recList">${shown.map(rowHtml).join('')}</div></div>`;
   }
   body.innerHTML = html;
 }
@@ -392,15 +459,26 @@ async function refreshStatus(id, btn) {
 }
 
 // ---------------------------------------------------------------- dialogs
-function openDialog({ title, body, ok, danger, onOk, wide, cancel = 'Cancel' }) {
-  $('dialogHost').innerHTML = `<div class="ovl" id="ovl"><div class="dlg ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="dlgT"><h3 id="dlgT">${esc(title)}</h3>${body}<div class="btnrow">${cancel ? `<button class="btn" type="button" id="dlgCancel">${esc(cancel)}</button>` : ''}${ok ? `<button class="btn ${danger ? 'danger' : 'primary'}" type="button" id="dlgOk">${esc(ok)}</button>` : ''}</div></div></div>`;
+// side: the record's details as a right-side panel (full screen on phones). Its own header has the close button.
+let dialogReturn = null;
+function openDialog({ title, body, ok, danger, onOk, wide, side, cancel = 'Cancel' }) {
+  closeMenus();
+  if (!$('ovl')) dialogReturn = document.activeElement;
+  $('dialogHost').innerHTML = `<div class="ovl${side ? ' side' : ''}" id="ovl"><div class="dlg ${wide ? 'wide' : ''}${side ? ' side' : ''}" role="dialog" aria-modal="true" aria-labelledby="dlgT"><h3 id="dlgT">${esc(title)}</h3>${body}<div class="btnrow">${cancel ? `<button class="btn" type="button" id="dlgCancel">${esc(cancel)}</button>` : ''}${ok ? `<button class="btn ${danger ? 'danger' : 'primary'}" type="button" id="dlgOk">${esc(ok)}</button>` : ''}</div></div></div>`;
   $('ovl').addEventListener('click', e => { if (e.target.id === 'ovl') closeDialog(); });
   $('dlgCancel')?.addEventListener('click', closeDialog);
   if (ok) $('dlgOk').addEventListener('click', onOk);
-  ($('dlgOk') || $('dlgCancel'))?.focus();
+  if (!side) ($('dlgOk') || $('dlgCancel'))?.focus();
 }
-function closeDialog() { $('dialogHost').innerHTML = ''; }
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ovl')) closeDialog(); });
+function closeDialog() { const had = !!$('ovl'); $('dialogHost').innerHTML = ''; if (had && dialogReturn?.isConnected) dialogReturn.focus(); dialogReturn = null; }
+// Esc closes the topmost: a ⋯ menu, then the review preview overlay is left to its own handler, then a dialog/panel, then the What's new toast.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const m = document.querySelector('.menu:not([hidden])');
+  if (m) { closeMenus(); document.querySelector(`[data-menu="${m.id}"]`)?.focus(); return; }
+  if ($('ovl')) { closeDialog(); return; }
+  if (!$('wnToast').hidden) markNewsSeen();
+});
 
 function kv(rows) { return `<dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v === '' || v === undefined || v === null ? '<span class="empty-val">—</span>' : v}</dd>`).join('')}</dl>`; }
 const tzCell = id => (id ? `${esc(S.tzLabel(id))} <span class="mono hint">${esc(id)}</span>` : '');
@@ -416,18 +494,30 @@ function fieldRows(p) {
       ['Mastersheet', p.mastersheet ? `<a href="${esc(p.mastersheet)}" target="_blank" rel="noopener">${esc(p.mastersheet)}</a>` : '<span class="empty-val">Not added yet</span>']],
   };
 }
-function openDetails(id) {
+const DTABS = [['overview', 'Overview'], ['kpi', 'KPI'], ['review', 'Review'], ['forms', 'Forms']];
+function openDetails(id, tab) {
   const r = state.records.find(x => x.id === id); if (!r) return;
+  // Opens on Overview: the needs-attention box (with Retry) comes first there.
+  state.detTab = tab || 'overview';
+  openDialog({ title: r.businessName, side: true, cancel: null, body: '<div id="detBody"></div>' });
   state.detailsId = id; state.editLink = null; delete state.wfProj[id];
-  openDialog({ title: r.businessName, wide: true, cancel: 'Close', body: '<div id="detBody"></div>' });
   paintDetails();
+  document.querySelector('#detBody .dtabs [aria-selected="true"]')?.focus();
+}
+function selectDetTab(tab) {
+  state.detTab = tab;
+  for (const b of document.querySelectorAll('#detBody .dtabs [data-dtab]')) b.setAttribute('aria-selected', String(b.dataset.dtab === tab));
+  for (const p of document.querySelectorAll('#detBody .dpane')) p.hidden = p.dataset.pane !== tab;
 }
 // Re-paints the open record dialog (after a save, a send or a refresh).
 function paintDetails() {
   const host = $('detBody'); if (!host) return;
   const r = state.records.find(x => x.id === state.detailsId); if (!r) return;
   const keepScroll = host.closest('.dlg')?.scrollTop;
+  const keepInfo = host.querySelector('.recinfo')?.open;
   host.innerHTML = detailsHtml(r);
+  if (keepInfo) host.querySelector('.recinfo').open = true;
+  selectDetTab(state.detTab || 'overview');
   if (keepScroll) host.closest('.dlg').scrollTop = keepScroll;
   paintProjects(r);
   paintWfState(r);
@@ -437,36 +527,70 @@ function detailsHtml(r) {
   const f = fieldRows({ brand: r.brand, csm: r.csm, webformsRequested: r.webformsRequested, mastersheet: r.links?.sheet, ...r.submitted });
   f.webforms = f.webforms.filter(([k]) => k === 'Brand' || k === 'CSM');
   const sp = r.snapshotProgress;
-  return `<div class="rv">
-    <div class="chips" style="display:flex;gap:6px;flex-wrap:wrap">${statusChip(r)}${kpiChip(r)}${reviewChip(r)}${webformsChip(r)}</div>
+  const x = rowInfo(r), tz = recTz(r);
+  const bad = n => (x.parts.find(p => p.name === n)?.state === 'failed' ? '<span class="bad" aria-label="needs attention">1</span>' : '');
+  return `<div class="dhead">
+      <button class="dclose" type="button" id="dlgCancel" data-act="closedet" aria-label="Close details"><span class="x" aria-hidden="true">${ICON.cross}</span><span class="bk">‹ Clients</span></button>
+      <div class="row1"><div><p class="ey">Client details${isTest(r) ? ' · Test' : ''}</p><h2>${esc(r.businessName)}</h2></div></div>
+      <p class="meta"><span>${esc(snapName(r.snapshot?.id, r.snapshot?.name))}</span>${tz ? `<span title="${esc(tz)}">${esc(S.tzLabel(tz))}</span>` : ''}<span title="${esc(fmtDate(r.createdAt))}">Created ${esc(shortDate(r.createdAt))}</span></p>
+      ${r.status !== 'ready' ? `<div class="chips" style="display:flex;gap:6px;flex-wrap:wrap">${statusChip(r)}</div>` : ''}
+      <div class="acts"><a class="btn sm" href="${esc(r.links?.ghl || W.ghlLinkFor(r.locationId))}" target="_blank" rel="noopener">Open in GHL ↗</a><button class="btn sm" type="button" data-act="copyid" data-id="${esc(r.locationId)}">${ICON.copy} Copy location ID</button><button class="btn sm" type="button" data-act="refresh" data-id="${esc(r.id)}">${ICON.sync} Refresh</button></div>
+      <div class="dtabs" role="tablist" aria-label="Record sections">${DTABS.map(([k, l]) => `<button type="button" role="tab" data-dtab="${k}" aria-selected="false">${l}${k === 'overview' ? '' : bad(k)}</button>`).join('')}</div>
+    </div>
+    <div class="dbody">
+    <div class="dpane" data-pane="overview" role="tabpanel">
+    ${attnBox(r, x)}
     ${linksSection(r)}
-    ${K.kpiCardHtml(r)}
-    ${RV.reviewCardHtml(r)}
-    ${webformsCard(r)}
+    <div class="ovsetup"><p class="lbl">Setup</p>${setupHtml(x)}</div>
+    <details class="recinfo"><summary>Record details</summary><div class="rv">
     <div><h4>Sub-account</h4>${kv([['Location ID', `<span class="mono">${esc(r.locationId)}</span> <button class="linkbtn" type="button" data-act="copyid" data-id="${esc(r.locationId)}">Copy</button>`], ['Open in GHL', `<a href="${esc(r.links?.ghl)}" target="_blank" rel="noopener">${esc(r.links?.ghl)}</a>`], ['Client login', `<a href="${esc(r.links?.clientLogin)}" target="_blank" rel="noopener">${esc(r.links?.clientLogin)}</a>`], ['Snapshot', esc(snapName(r.snapshot?.id, r.snapshot?.name))], ['Snapshot load', sp ? esc(`${sp.percent}% · ${sp.completed} done, ${sp.pending} pending · GHL status "${sp.status}" · checked ${fmtDate(sp.checkedAt)}`) : '']])}</div>
     <div><h4>Business</h4>${kv(f.business)}</div><div><h4>Address</h4>${kv(f.address)}</div><div><h4>Primary contact</h4>${kv(f.contact)}</div>
     <div><h4>Add-ons</h4>${kv([['KPI dashboard', `${r.kpiRequested ? `Requested · ${esc(r.practiceArea)}` : 'Not requested'} · ${esc(K.kpiState(r).label)}`], ['Automation review page', r.reviewRequested ? `Requested · audience “${esc(r.audience)}” · healthcare: ${r.smsHealthcare ? 'yes' : 'no'}` : 'Not requested']])}</div>
     <div><h4>Social links</h4>${kv(f.social)}</div><div><h4>Advanced</h4>${kv(f.settings)}</div>
-    <div><h4>Internal</h4>${kv([...f.webforms, ['Created by', esc(r.createdBy)], ['Created', `${esc(fmtDate(r.createdAt))} · ${esc(r.createdAtManila)}`], ['Package / notes', esc(r.notes).replace(/\n/g, '<br>')], ['Request ID', `<span class="mono">${esc(r.requestId)}</span>`]])}</div></div>`;
+    <div><h4>Internal</h4>${kv([...f.webforms, ['Created by', esc(r.createdBy)], ['Created', `${esc(fmtDate(r.createdAt))} · ${esc(r.createdAtManila)}`], ['Package / notes', esc(r.notes).replace(/\n/g, '<br>')], ['Request ID', `<span class="mono">${esc(r.requestId)}</span>`]])}</div></div></details></div>
+    <div class="dpane" data-pane="kpi" role="tabpanel">${K.kpiCardHtml(r)}</div>
+    <div class="dpane" data-pane="review" role="tabpanel">${RV.reviewCardHtml(r)}</div>
+    <div class="dpane" data-pane="forms" role="tabpanel">${webformsCard(r)}</div></div>`;
+}
+// Overview: the needs-attention box, first. KPI gets Retry right here; Review and Forms open their tab (their retry needs the card's checks).
+function attnBox(r, x) {
+  const p = x.problem; if (!p) return '';
+  const tabBtn = (t, l, gold) => `<button class="btn${gold ? ' p' : ''}" type="button" data-goto="${t}">${l} →</button>`;
+  const box = (title, tag, body, btns) => `<section class="panel attnbox" id="attnBox" role="alert"><div class="ah"><b>${esc(title)}</b><span class="ftag">${esc(tag)}</span></div>${body}<div class="btnrow">${btns}</div></section>`;
+  if (p.part === 'kpi') {
+    const pr = K.kpiProgress(r);
+    const bar = pr ? `<div class="pbar" aria-hidden="true"><span style="width:${Math.round((pr.done / pr.total) * 100)}%"></span></div>` : '';
+    return box('KPI dashboard', r.kpi?.error?.step === 'sync' ? 'Sync failed' : 'Setup failed', `${bar}<p class="sub">${pr ? `${pr.done} of ${pr.total} steps · ` : ''}Nothing is lost. Retry finishes what's missing.</p>`,
+      `<button class="btn p" type="button" data-act="kpistart" data-id="${esc(r.id)}" data-goto="kpi">${ICON.sync} Retry</button>${tabBtn('kpi', 'Open KPI tab')}`);
+  }
+  if (p.part === 'review') return box('Review package', 'Publish failed', `<p class="sub">${esc(r.review?.error?.message || 'The publish stopped.')} Nothing is lost: Retry publish on the Review tab finishes it.</p>`, tabBtn('review', 'Open Review tab', true));
+  if (p.part === 'forms') return box('Webforms ticket', 'Not sent', `<p class="sub">${esc(x.forms.reason || 'The ticket was not sent.')}</p>`, tabBtn('forms', 'Open Forms tab', true));
+  return box('Sub-account', 'Failed', `<p class="sub">${esc((S.RECORD_STATUS[r.status] || {}).label || 'The sub-account setup failed.')} Refresh checks GHL again.</p>`, `<button class="btn p" type="button" data-act="refresh" data-id="${esc(r.id)}">${ICON.sync} Refresh</button>`);
 }
 
 // ---------------------------------------------------------------- record: Links
 const whoName = () => (store.get(WHO_KEY) || '').trim();
+// Overview links: label on the left; Open ↗ · Copy · Edit, or Not set · Add (editing opens the same inline editor as before).
+const LINK_ORDER = ['ghl', 'kpi', 'review', 'reviewMessages', 'zap', 'webhook', 'ticket', 'sheet'];
+const LINK_NAME = { review: 'Review · Plan (A)', reviewMessages: 'Review · Messages (B)', zap: 'Zap' };
 function linksSection(r) {
   const l = W.recordLinks(r), edits = r.linkEdits || {};
-  const rows = W.LINKS.map(k => {
-    const v = l[k.key], ed = edits[k.key], editing = state.editLink === k.key;
-    const val = v ? `<a href="${esc(v)}" target="_blank" rel="noopener" class="lkurl" title="${esc(v)}">${esc(v.replace(/^https:\/\//, ''))}</a>` : `<span class="empty-val">${esc(k.readOnly ? 'Set up in a later phase' : k.missing)}</span>`;
+  const keys = [...LINK_ORDER.filter(k => W.LINK[k]), ...W.LINKS.map(k => k.key).filter(k => !LINK_ORDER.includes(k))];
+  const rows = keys.map(key => {
+    const k = W.LINK[key], v = l[key], ed = edits[key], editing = state.editLink === key, name = LINK_NAME[key] || k.label;
     const by = ed && !ed.auto ? `<span class="hint lkby">Edited by ${esc(ed.by)} · ${esc(fmtDate(ed.at))}</span>` : '';
-    const acts = `${v ? `<a class="btn sm" href="${esc(v)}" target="_blank" rel="noopener" aria-label="Open ${esc(k.label)}">${ICON.ext}<span>Open</span></a><button class="btn sm" type="button" data-act="copytext" data-text="${esc(v)}" data-what="${esc(k.label)} link" aria-label="Copy ${esc(k.label)} link">${ICON.copy}<span>Copy</span></button>` : ''}${k.readOnly ? '' : `<button class="btn sm icon" type="button" data-act="editlink" data-k="${k.key}" aria-label="Edit ${esc(k.label)} link" title="Paste or fix the link">${ICON.pencil}</button>`}`;
+    const sep = '<span class="sep" aria-hidden="true">·</span>';
+    const acts = v
+      ? `<a class="lkurl" href="${esc(v)}" target="_blank" rel="noopener" title="${esc(v)}" aria-label="Open ${esc(k.label)}">Open ↗</a>${sep}<button class="linkbtn" type="button" data-act="copytext" data-text="${esc(v)}" data-what="${esc(k.label)} link" aria-label="Copy ${esc(k.label)} link">Copy</button>${k.readOnly ? '' : `${sep}<button class="linkbtn" type="button" data-act="editlink" data-k="${key}" aria-label="Edit ${esc(k.label)} link" title="Paste or fix the link">Edit</button>`}`
+      : `<span class="empty-val" title="${esc(k.missing)}">Not set</span>${k.readOnly ? '' : `${sep}<button class="linkbtn" type="button" data-act="editlink" data-k="${key}" aria-label="Add ${esc(k.label)} link">Add</button>`}`;
     const editor = editing ? `<div class="lkedit">
         <input type="url" id="lk-in" value="${esc(v)}" placeholder="https://…" aria-label="${esc(k.label)} link" spellcheck="false">
         ${whoName() ? '' : '<input type="text" id="lk-who" placeholder="Your name" aria-label="Your name">'}
-        <div class="btnrow"><button class="btn primary sm" type="button" data-act="savelink" data-k="${k.key}">Save</button><button class="btn sm" type="button" data-act="canceledit">Cancel</button>${k.key === 'ghl' ? '<span class="hint">Leave empty to use the automatic link.</span>' : ''}</div>
+        <div class="btnrow"><button class="btn primary sm" type="button" data-act="savelink" data-k="${key}">Save</button><button class="btn sm" type="button" data-act="canceledit">Cancel</button>${key === 'ghl' ? '<span class="hint">Leave empty to use the automatic link.</span>' : ''}</div>
         <span class="ferr" id="lk-err" role="alert"></span></div>` : '';
-    return `<li data-lk="${k.key}"><span class="lkic">${LINK_ICON[k.key]}</span><span class="lkname">${esc(k.label)}</span><span class="lkval">${val}${by}</span><span class="lkacts">${acts}</span>${editor}</li>`;
+    return `<li data-lk="${key}"><span class="lkname">${esc(name)}${by}</span><span class="lkacts2">${acts}</span>${editor}</li>`;
   }).join('');
-  return `<section class="panel" id="linksSec"><h4>Links</h4><ul class="linklist">${rows}</ul></section>`;
+  return `<section class="ovlinks" id="linksSec"><p class="lbl">Links</p><ul class="linklist2">${rows}</ul></section>`;
 }
 async function saveLink(key, btn) {
   const r = state.records.find(x => x.id === state.detailsId); if (!r) return;
@@ -660,11 +784,27 @@ async function refreshDesk(btn) {
   } catch (e) { if (info) info.textContent = e.message; }
   finally { if (btn.isConnected) { btn.disabled = false; btn.innerHTML = label; } }
 }
+// The developer text per version from CHANGELOG.md ("## [1.1.0] - 2026-11-15"), shown under "Technical details".
+export function changelogByVersion(md) {
+  const out = {}; let cur = null;
+  for (const line of String(md || '').split('\n')) {
+    const h = /^##\s+\[?(\d+\.\d+\.\d+)\]?/.exec(line);
+    if (h) { cur = out[h[1]] = []; continue; }
+    if (cur && /^-\s+/.test(line)) cur.push(line.replace(/^-\s+/, ''));
+    else if (cur && line.trim() && cur.length && !/^#/.test(line)) cur[cur.length - 1] += ` ${line.trim()}`;
+  }
+  return out;
+}
+const inlineMd = t => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
 async function openNews() {
-  let md = '';
-  try { const r = await fetch(`./CHANGELOG.md?t=${Date.now()}`, { cache: 'no-store' }); if (r.ok) md = await r.text(); } catch {}
-  const html = md ? md.split('\n').map(l => l.startsWith('## ') ? `<h4>${esc(l.slice(3))}</h4>` : l.startsWith('- ') ? `<li>${esc(l.slice(2)).replace(/`([^`]+)`/g, '<code>$1</code>')}</li>` : l.startsWith('# ') ? '' : l.trim() ? `<p class="sub">${esc(l)}</p>` : '').join('').replace(/(<li>.*?<\/li>)+/gs, m => `<ul style="padding-left:18px;margin:0">${m}</ul>`) : '<p class="sub">No release notes found.</p>';
-  openDialog({ title: `What's new · v${S.VERSION}`, body: `<div class="news">${html}</div>`, wide: true, cancel: 'Close' });
+  closeMenus();
+  const [news, md] = await Promise.all([loadNews(), fetch(`./CHANGELOG.md?t=${Date.now()}`, { cache: 'no-store' }).then(r => (r.ok ? r.text() : '')).catch(() => '')]);
+  const tech = changelogByVersion(md);
+  const cards = (news.versions || []).map((v, i) => `<details class="vcard"${i === 0 ? ' open' : ''}><summary><span class="vt"><b>v${esc(v.version)}</b>${i === 0 ? '<span class="pill">Latest</span>' : ''}<span class="vdate">${esc(v.date)}</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg><p class="vsum">${esc(v.title)}</p></summary>
+      <div class="vbody"><ul class="plain">${v.items.map(it => `<li><span><span class="tag tg-${esc(it.type)}">${TYPE_LABEL[it.type] || 'Improved'}</span></span><span>${esc(it.text)}</span></li>`).join('')}</ul>
+      ${tech[v.version]?.length ? `<details class="vtech"><summary class="linkbtn">Technical details</summary><ul>${tech[v.version].map(t => `<li>${inlineMd(t)}</li>`).join('')}</ul></details>` : ''}</div></details>`).join('');
+  openDialog({ title: `What's new · v${S.VERSION}`, body: `<div class="news">${cards || '<p class="sub">No release notes found.</p>'}</div>`, wide: true, cancel: 'Close' });
+  markNewsSeen();
 }
 
 // ---------------------------------------------------------------- New sub-account tab
@@ -677,8 +817,9 @@ const sel = (opts, value, placeholder) => `${placeholder !== undefined ? `<optio
 const field = (id, label, input, { req, hint, cls = '' } = {}) => `<label class="f ${cls}" for="f-${id}" id="w-${id}"><span class="${req ? 'req' : ''}">${esc(label)}</span>${hint ? `<span class="hint">${hint}</span>` : ''}${input}<span class="ferr" id="e-${id}"></span></label>`;
 
 function renderNew() {
-  $('panel-new').innerHTML = `<div id="formView"></div><div id="reviewView" hidden></div><div id="runView" hidden></div>`;
+  $('panel-new').innerHTML = `<div class="formwrap"><div id="formView"></div><div id="reviewView" hidden></div><div id="runView" hidden></div></div>`;
   $('formView').innerHTML = `
+  <div class="head"><p class="ey">LFMP · Sub-account builder</p><h1 class="disp" id="newTitle">New <span class="g">sub-account.</span></h1><p class="sub">Creates the GHL sub-account from a snapshot. Nothing is created until you check the details and press Create.</p></div>
   <form class="form" id="nf" novalidate autocomplete="off">
     <fieldset class="grp"><legend>Snapshot</legend>
       <div class="grid2">
@@ -1120,15 +1261,26 @@ async function refreshSnapshots(btn) {
 document.addEventListener('click', e => {
   const eye = e.target.closest('[data-eye]');
   if (eye) { const i = $(eye.dataset.eye); const vis = i.type === 'password'; i.type = vis ? 'text' : 'password'; eye.innerHTML = vis ? ICON.eyeOff : ICON.eye; eye.setAttribute('aria-label', vis ? 'Hide' : 'Show'); return; }
-  const tab = e.target.closest('.tab'); if (tab) { selectTab(tab.dataset.tab); return; }
+  const mb = e.target.closest('[data-menu]');
+  if (mb) { const m = $(mb.dataset.menu); closeMenus(m); m.hidden = !m.hidden; mb.setAttribute('aria-expanded', String(!m.hidden)); if (!m.hidden) m.querySelector('button,a')?.focus(); return; }
+  if (!e.target.closest('.menu')) closeMenus();
+  else if (e.target.closest('.menu button, .menu a')) setTimeout(() => closeMenus(), 0);
+  const th = e.target.closest('[data-theme-set]'); if (th) { applyTheme(th.dataset.themeSet); document.querySelector(`.themeseg [data-theme-set="${th.dataset.themeSet}"]`)?.focus(); return; }
+  const tab = e.target.closest('.tab, .bnav [data-tab]'); if (tab) { e.preventDefault(); if (tab.dataset.tab === 'new') { if (!state.run) { selectTab('new'); $('formView').hidden = false; } else selectTab('new'); } else selectTab(tab.dataset.tab); window.scrollTo(0, 0); return; }
+  const dt = e.target.closest('[data-dtab]'); if (dt) { selectDetTab(dt.dataset.dtab); return; }
+  const go = e.target.closest('[data-goto]'); if (go) { selectDetTab(go.dataset.goto); if (!go.dataset.act) { document.querySelector(`#detBody [data-dtab="${go.dataset.goto}"]`)?.focus(); return; } }
+  const lt = e.target.closest('[data-ltabset]'); if (lt) { state.listTab = lt.dataset.ltabset; paintList(); return; }
   const a = e.target.closest('[data-act]'); if (!a) return;
   const act = a.dataset.act;
   if (act === 'lock') lockNow();
-  else if (act === 'theme') toggleTheme();
   else if (act === 'news') openNews();
+  else if (act === 'newsgot') markNewsSeen();
+  else if (act === 'closedet') closeDialog();
+  else if (act === 'more') openDialog({ title: 'More', cancel: 'Close', body: `<div class="rv"><div><h4>Theme</h4><div class="themeseg">${themeSegHtml()}</div></div><div class="btnrow" style="margin:0;flex-direction:column;align-items:stretch"><button class="btn big" type="button" data-act="reload">${ICON.sync} Refresh list</button><button class="btn big" type="button" data-act="news">What's new · v${esc(S.VERSION)}</button><button class="btn big" type="button" data-act="forget">Forget token</button><button class="btn big" type="button" data-act="lock">Lock</button></div></div>` });
   else if (act === 'forget') openDialog({ title: 'Forget token in this browser?', body: '<p class="sub">The saved GitHub token is removed from this browser. You will need to paste a token again next time. The token itself stays valid on GitHub; revoke it there if this device is lost.</p>', ok: 'Forget token', danger: true, onOk: () => { store.set(TOKEN_KEY, null); ghToken = null; stopRun(); closeDialog(); askToken('Token removed from this browser. Paste a token to continue.'); } });
-  else if (act === 'reload') { loadAll(); }
-  else if (act === 'gonew') { if (!state.run) { selectTab('new'); $('formView').hidden = false; } else newForm(); }
+  else if (act === 'reload') { closeDialog(); loadAll(); }
+  else if (act === 'showtests') { state.showTests = true; store.set(SHOW_TESTS, '1'); if ($('showTests')) $('showTests').checked = true; paintList(); }
+  else if (act === 'gonew') { closeDialog(); if (!state.run) { selectTab('new'); $('formView').hidden = false; } else newForm(); window.scrollTo(0, 0); }
   else if (act === 'golist') { selectTab('list'); }
   else if (act === 'copyid') copy(a.dataset.id, 'Location ID');
   else if (act === 'copytext') copy(a.dataset.text, a.dataset.what || 'Text');
