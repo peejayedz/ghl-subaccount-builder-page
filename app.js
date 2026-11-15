@@ -546,7 +546,7 @@ function attnBox(r, x) {
 const whoName = () => (store.get(WHO_KEY) || '').trim();
 // Overview links: label on the left; Open ↗ · Copy · Edit, or Not set · Add (editing opens the same inline editor as before).
 const LINK_ORDER = ['ghl', 'kpi', 'review', 'reviewMessages', 'zap', 'webhook', 'ticket', 'sheet'];
-const LINK_NAME = { review: 'Review · Plan (A)', reviewMessages: 'Review · Messages (B)', zap: 'Zap' };
+const LINK_NAME = { review: 'Link A · Plan + review', reviewMessages: 'Link B · Review only', zap: 'Zap' };   // same names as the Review card and the Review admin (v1.4.1)
 function linksSection(r) {
   const l = W.recordLinks(r), edits = r.linkEdits || {};
   const keys = [...LINK_ORDER.filter(k => W.LINK[k]), ...W.LINKS.map(k => k.key).filter(k => !LINK_ORDER.includes(k))];

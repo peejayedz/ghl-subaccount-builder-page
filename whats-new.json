@@ -2,6 +2,14 @@
   "_about": "What's new cards for the builder page (newest first). Plain words only: no file names, commits, secrets or workflow names. CHANGELOG.md is the developer history and shows under each card's Technical details.",
   "versions": [
     {
+      "version": "1.4.1",
+      "date": "Nov 16",
+      "title": "Review links named like the Review admin",
+      "items": [
+        { "type": "improved", "text": "On a client's Review card and the Overview tab, the two review links are now called Link A · Plan + review and Link B · Review only, the same names as in the Review admin." }
+      ]
+    },
+    {
       "version": "1.4.0",
       "date": "Nov 16",
       "title": "Find the client in GHL instead of typing",

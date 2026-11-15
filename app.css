@@ -562,6 +562,7 @@ details.tech pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--pa
   .panel{padding:16px}
   .kpicard .btnrow .btn,.rvcard .btnrow .btn{flex:1 1 auto;min-height:48px}
   .rvcard .rvlinks li{grid-template-columns:1fr;gap:4px}
+  .rvcard .rvlinks li>*{grid-column:1/-1}   /* label, link, Open + Copy each on its own full-width line */
   .rvbar .seg{margin-left:0;order:3;flex-basis:100%}
   .rvbar .seg .btn{flex:1}
   .fab{display:inline-flex;position:fixed;right:16px;bottom:84px;z-index:40;min-height:48px;box-shadow:var(--shadow)}

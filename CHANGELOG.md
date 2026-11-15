@@ -3,6 +3,11 @@
 All notable changes to the LFMP Sub-account Builder. Versions follow semantic versioning.
 This file is the developer history. The page's "What's new" shows the plain-language cards in `page/whats-new.json` and this text under "Technical details".
 
+## [1.4.1] - 2026-11-16
+
+- Changed: the Review card's client links now use the Review admin's names: **Link A · Plan + review** (was "A · Plan page (send this)") and **Link B · Review only** (was "B · Messages only (re-reviews)"). Same links, same order, Open + Copy unchanged. The client's Overview tab uses the same names (was "Review · Plan (A)" / "Review · Messages (B)"), so they match everywhere.
+- Fix: on phones the Review card's link label was squeezed into a narrow column (a phone rule for the Overview links gave the row a second column), so "Link A · Plan + review" wrapped one word per line. Label, link and Open + Copy now each take a full-width line. `tests/e2e/design.mjs` checks the labels and that each fits on one line, with a screenshot of the links (1440/390, light/dark).
+
 ## [1.4.0] - 2026-11-16
 
 - New: **two ways to start** a new sub-account: **Find client in GHL** (default) and **Enter details manually** (today's form, unchanged). Switching keeps whatever is already typed. In Find mode the form appears once a client is picked (or something is already typed).
