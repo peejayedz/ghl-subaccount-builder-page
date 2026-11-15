@@ -7,6 +7,8 @@ import * as K from './kpi.js';
 import * as RV from './review-ui.js';
 import * as RVR from './review.js';
 import * as ST from './status.js';
+import * as FCU from './find-client.js';
+import * as FC from './find-client-fields.js';
 import { createLogin } from './lfmp-login.js';
 
 const CFG = window.BUILDER_CONFIG;
@@ -506,7 +508,7 @@ function detailsHtml(r) {
       <div class="row1"><div><p class="ey">Client details${isTest(r) ? ' · Test' : ''}</p><h2>${esc(r.businessName)}</h2></div></div>
       <p class="meta"><span>${esc(snapName(r.snapshot?.id, r.snapshot?.name))}</span>${tz ? `<span title="${esc(tz)}">${esc(S.tzLabel(tz))}</span>` : ''}<span title="${esc(fmtDate(r.createdAt))}">Created ${esc(shortDate(r.createdAt))}</span></p>
       ${r.status !== 'ready' ? `<div class="chips" style="display:flex;gap:6px;flex-wrap:wrap">${statusChip(r)}</div>` : ''}
-      <div class="acts"><a class="btn sm" href="${esc(r.links?.ghl || W.ghlLinkFor(r.locationId))}" target="_blank" rel="noopener">Open in GHL ↗</a><button class="btn sm" type="button" data-act="copyid" data-id="${esc(r.locationId)}">${ICON.copy} Copy location ID</button><button class="btn sm" type="button" data-act="refresh" data-id="${esc(r.id)}">${ICON.sync} Refresh</button></div>
+      <div class="acts"><a class="btn sm" href="${esc(r.links?.ghl || W.ghlLinkFor(r.locationId))}" target="_blank" rel="noopener">Open in GHL ↗</a>${FC.isContactId(r.lfmpContactId) ? `<a class="btn sm" href="${esc(FC.crmLink(r.lfmpContactId))}" target="_blank" rel="noopener" id="crmLink">Client in LFMP CRM ↗</a>` : ''}<button class="btn sm" type="button" data-act="copyid" data-id="${esc(r.locationId)}">${ICON.copy} Copy location ID</button><button class="btn sm" type="button" data-act="refresh" data-id="${esc(r.id)}">${ICON.sync} Refresh</button></div>
       <div class="dtabs" role="tablist" aria-label="Record sections">${DTABS.map(([k, l]) => `<button type="button" role="tab" data-dtab="${k}" aria-selected="false">${l}${k === 'overview' ? '' : bad(k)}</button>`).join('')}</div>
     </div>
     <div class="dbody">
@@ -515,7 +517,7 @@ function detailsHtml(r) {
     ${linksSection(r)}
     <div class="ovsetup"><p class="lbl">Setup</p>${setupHtml(x)}</div>
     <details class="recinfo"><summary>Record details</summary><div class="rv">
-    <div><h4>Sub-account</h4>${kv([['Location ID', `<span class="mono">${esc(r.locationId)}</span> <button class="linkbtn" type="button" data-act="copyid" data-id="${esc(r.locationId)}">Copy</button>`], ['Open in GHL', `<a href="${esc(r.links?.ghl)}" target="_blank" rel="noopener">${esc(r.links?.ghl)}</a>`], ['Client login', `<a href="${esc(r.links?.clientLogin)}" target="_blank" rel="noopener">${esc(r.links?.clientLogin)}</a>`], ['Snapshot', esc(snapName(r.snapshot?.id, r.snapshot?.name))], ['Snapshot load', sp ? esc(`${sp.percent}% · ${sp.completed} done, ${sp.pending} pending · GHL status "${sp.status}" · checked ${fmtDate(sp.checkedAt)}`) : '']])}</div>
+    <div><h4>Sub-account</h4>${kv([['Location ID', `<span class="mono">${esc(r.locationId)}</span> <button class="linkbtn" type="button" data-act="copyid" data-id="${esc(r.locationId)}">Copy</button>`], ['Open in GHL', `<a href="${esc(r.links?.ghl)}" target="_blank" rel="noopener">${esc(r.links?.ghl)}</a>`], ['Client login', `<a href="${esc(r.links?.clientLogin)}" target="_blank" rel="noopener">${esc(r.links?.clientLogin)}</a>`], ['Snapshot', esc(snapName(r.snapshot?.id, r.snapshot?.name))], ['Snapshot load', sp ? esc(`${sp.percent}% · ${sp.completed} done, ${sp.pending} pending · GHL status "${sp.status}" · checked ${fmtDate(sp.checkedAt)}`) : ''], ['LFMP CRM contact', FC.isContactId(r.lfmpContactId) ? `<a href="${esc(FC.crmLink(r.lfmpContactId))}" target="_blank" rel="noopener">Client in LFMP CRM ↗</a> <span class="mono hint">${esc(r.lfmpContactId)}</span>` : '']])}</div>
     <div><h4>Business</h4>${kv(f.business)}</div><div><h4>Address</h4>${kv(f.address)}</div><div><h4>Primary contact</h4>${kv(f.contact)}</div>
     <div><h4>Add-ons</h4>${kv([['KPI dashboard', `${r.kpiRequested ? `Requested · ${esc(r.practiceArea)}` : 'Not requested'} · ${esc(K.kpiState(r).label)}`], ['Automation review page', r.reviewRequested ? `Requested · audience “${esc(r.audience)}” · healthcare: ${r.smsHealthcare ? 'yes' : 'no'}` : 'Not requested']])}</div>
     <div><h4>Social links</h4>${kv(f.social)}</div><div><h4>Advanced</h4>${kv(f.settings)}</div>
@@ -789,9 +791,11 @@ const sel = (opts, value, placeholder) => `${placeholder !== undefined ? `<optio
 const field = (id, label, input, { req, hint, cls = '' } = {}) => `<label class="f ${cls}" for="f-${id}" id="w-${id}"><span class="${req ? 'req' : ''}">${esc(label)}</span>${hint ? `<span class="hint">${hint}</span>` : ''}${input}<span class="ferr" id="e-${id}"></span></label>`;
 
 function renderNew() {
-  $('panel-new').innerHTML = `<div class="formwrap"><div id="formView"></div><div id="reviewView" hidden></div><div id="runView" hidden></div></div>`;
+  FCU.reset(); state.fcFilled = {};
+  $('panel-new').innerHTML = `<div class="formwrap"><div id="formView"></div><div id="runView" hidden></div></div>`;
   $('formView').innerHTML = `
-  <div class="head"><p class="ey">LFMP · Sub-account builder</p><h1 class="disp" id="newTitle">New <span class="g">sub-account.</span></h1><p class="sub">Creates the GHL sub-account from a snapshot. Nothing is created until you check the details and press Create.</p></div>
+  <div class="head"><p class="ey">LFMP · Sub-account builder</p><h1 class="disp" id="newTitle">New <span class="g">sub-account.</span></h1><p class="sub">Creates the GHL sub-account from a snapshot. Nothing is created until you check the details and say yes.</p></div>
+  ${FCU.startHtml()}
   <form class="form" id="nf" novalidate autocomplete="off">
     <fieldset class="grp"><legend>Snapshot</legend>
       <div class="grid2">
@@ -859,7 +863,7 @@ function renderNew() {
         <div class="full">${field('notes', 'Package / notes', `<textarea id="f-notes" maxlength="2000" placeholder="Package sold, anything the team should know"></textarea>`)}</div>
       </div>
     </fieldset>
-    <div class="formfoot"><span class="hint" id="formSummary"></span><button class="btn primary big" type="submit" id="toReview">Review</button></div>
+    <div class="formfoot"><span class="hint" id="formSummary"></span><button class="btn primary big" type="submit" id="toReview">Create sub-account</button></div>
   </form>`;
   for (const el of document.querySelectorAll('.hidden-init')) el.hidden = true;
   $('f-who').value = store.get(WHO_KEY) || '';
@@ -870,6 +874,48 @@ function renderNew() {
   nf.addEventListener('submit', e => { e.preventDefault(); goReview(); });
   state.allowDuplicate = false; state.tzManual = false; state.showAll = false;
   paintSnapshotSelect(); paintCsmSelect();
+  FCU.paint(); paintFormVis();
+}
+
+// ---------------------------------------------------------------- Find client in GHL: fill + marks (v1.4.0)
+// GHL value -> form field id. The time zone is suggested from the state (not marked as From GHL).
+const GHL_FIELD = { country: 'country', businessName: 'name', phone: 'phone', website: 'website', address: 'street', city: 'city', postalCode: 'zip', firstName: 'first', lastName: 'last', email: 'email', brand: 'brand' };
+const FIELD_DEFAULT = { country: 'US', brand: 'LFMP' };
+const TYPED_IDS = ['name', 'phone', 'website', 'street', 'city', 'zip', 'first', 'last', 'email', 'stateText', 'notes'];
+const hasTyped = () => TYPED_IDS.some(id => ($(`f-${id}`)?.value || '').trim()) || !!$('f-state')?.value;
+// Find mode shows the form once a client is picked (or something is already typed); manual mode always shows it.
+function paintFormVis() { const nf = $('nf'); if (nf) nf.hidden = FCU.mode() === 'ghl' && !FCU.picked() && !hasTyped(); }
+const isFromGhl = id => state.fcFilled?.[id] !== undefined && ($(`f-${id}`)?.value ?? '') === state.fcFilled[id];
+function resetGhlFields() {
+  for (const id of Object.keys(state.fcFilled || {})) if (isFromGhl(id)) $(`f-${id}`).value = FIELD_DEFAULT[id] || '';
+  state.fcFilled = {};
+}
+function applyGhl(values) {
+  resetGhlFields();   // a different client: drop what the last pick filled (only fields nobody changed since)
+  const filled = {};
+  const put = (id, v) => { const el = $(`f-${id}`); if (!el || !v) return; el.value = v; if (el.value === v) filled[id] = v; };
+  put('country', values.country);
+  onFormInput({ target: {} });   // State select or State / region box follows the country
+  for (const [k, id] of Object.entries(GHL_FIELD)) if (k !== 'country') put(id, values[k]);
+  if (values.state) put(($('f-country').value || 'US') === 'US' ? 'state' : 'stateText', values.state);
+  if (values.timezone && !state.tzManual) $('f-tz').value = values.timezone;
+  state.fcFilled = filled; state.allowDuplicate = false;
+  touched.clear(); state.showAll = false;
+  onFormInput({ target: {} });
+  window.scrollTo(0, 0);
+  return Object.keys(filled).length;
+}
+function clearGhl() { resetGhlFields(); onFormInput({ target: {} }); }
+function paintGhlMarks() {
+  const picked = !!FCU.picked();
+  const need = new Set(['snapshot', 'name', 'tz', 'first', 'last', 'email', 'who']);
+  if ($('f-kpi')?.checked) need.add($('f-area').value === 'Other' ? 'areaOther' : 'area');
+  if ($('f-review')?.checked) need.add('audience');
+  for (const lab of document.querySelectorAll('#nf label.f')) {
+    const id = lab.id.slice(2);
+    lab.classList.toggle('fromghl', isFromGhl(id));
+    lab.classList.toggle('needfill', picked && need.has(id) && !lab.hidden && !($(`f-${id}`)?.value || '').trim());
+  }
 }
 function paintCsmSelect() {
   const s = $('f-csm'); if (!s) return;
@@ -906,6 +952,7 @@ export function readForm() {
   };
   const csm = state.desk.csm.find(c => String(c.id) === v('csm'));
   if (csm) p.csm = { id: csm.id, tag: csm.tag, name: csm.name };
+  if (FCU.picked()) p.lfmpContactId = FCU.picked().id;   // optional: the client's contact in LFMP's CRM
   for (const [k] of S.SOCIAL) { const x = v(`s-${k}`).trim(); if (x) p.social[k] = k === 'googlePlacesId' ? x : S.normalizeUrl(x); }
   for (const [k] of S.SETTINGS) { const x = v(`a-${k}`); if (x) p.settings[k] = x === 'true'; }
   return p;
@@ -981,6 +1028,7 @@ function onFormInput(e) {
   $('socialCount').textContent = nSocial ? `${nSocial} added` : '';
   paintDup();
   paintErrors();
+  paintGhlMarks(); paintFormVis();
 }
 function paintDup() {
   const name = $('f-name').value.trim();
@@ -997,7 +1045,7 @@ function goReview() {
   const out = paintErrors(true);
   const keys = Object.keys(out);
   if (keys.length) {
-    $('formSummary').textContent = `${keys.length} thing${keys.length === 1 ? '' : 's'} to fix before review.`;
+    $('formSummary').textContent = `${keys.length} thing${keys.length === 1 ? '' : 's'} to fix before creating.`;
     const first = $(`f-${keys.find(k => $(`f-${k}`) && !$(`w-${k}`)?.hidden && !$(`f-${k}`).closest('[hidden]')) || keys[0]}`);
     const det = first?.closest('details'); if (det) det.open = true;
     first?.focus(); first?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1006,35 +1054,63 @@ function goReview() {
   $('formSummary').textContent = '';
   const p = readForm();
   state.form = p;
+  openConfirm(p);
+}
+
+// "Create this sub-account?" popup (v1.4.0; replaces the old "Check the details" screen). Nothing starts until Yes.
+function openConfirm(p) {
+  const g = (...ids) => (ids.some(isFromGhl) ? ' <span class="ghlmark">From GHL</span>' : '');
+  const yes = v => (v ? `<span class="cfyes">${ICON.tick} Yes</span>` : '<span class="empty-val">No</span>');
+  const addr = [p.address, p.city, [p.state, p.postalCode].filter(Boolean).join(' '), p.country].filter(Boolean).join(', ');
   const f = fieldRows(p);
-  $('formView').hidden = true; $('reviewView').hidden = false;
-  $('reviewView').innerHTML = `<div class="rv">
-    <div><h2>Check the details</h2><p class="sub">Nothing is created until you press <b>Create sub-account</b>.</p></div>
-    <div><h4>Snapshot</h4>${kv([['Snapshot', esc(p.snapshotName)]])}</div>
-    <div><h4>Business</h4>${kv(f.business)}</div>
+  const rows = [
+    ['Business name', `<b>${esc(p.businessName)}</b>${g('name')}`],
+    ['Snapshot', esc(p.snapshotName)],
+    ['Time zone', tzCell(p.timezone)],
+    ['Address', addr ? `${esc(addr)}${g('street', 'city', 'state', 'stateText', 'zip')}` : ''],
+    ['Business phone', p.phone ? `${esc(S.formatPhone(p.phone))}${g('phone')}` : ''],
+    ['Website', p.website ? `${esc(p.website)}${g('website')}` : ''],
+    ['Primary contact', `${esc(`${p.firstName} ${p.lastName}`)}${g('first', 'last')}<br><span class="hint">${esc(p.email)}</span>${g('email')}`],
+    ['Brand', `${esc(p.brand || 'LFMP')}${g('brand')}`],
+  ];
+  const ticks = [
+    ['KPI dashboard', p.kpi.requested ? `${yes(true)} · ${esc(p.kpi.practiceArea)}` : yes(false)],
+    ['Automation Review', p.review.requested ? `${yes(true)} · audience “${esc(p.review.audience)}” · healthcare: ${p.review.smsHealthcare ? 'yes' : 'no'}` : yes(false)],
+    ['Webforms ticket', yes(p.webformsRequested !== false)],
+  ];
+  const nSocial = S.SOCIAL.filter(([k]) => p.social?.[k]).length, nAdv = S.SETTINGS.filter(([k]) => typeof p.settings?.[k] === 'boolean').length;
+  openDialog({ title: 'Create this sub-account?', wide: true, cancel: null, body: `<div class="cfm" id="confirmDlg">
+    <p class="sub">This creates <b>${esc(p.businessName)}</b> in GHL now. Check the details first.</p>
     ${state.allowDuplicate ? '<div class="warnbox">You chose <b>Create anyway</b>: a sub-account with a similar name already exists.</div>' : ''}
-    <div><h4>Address</h4>${kv(f.address)}</div>
-    <div><h4>Primary contact</h4>${kv(f.contact)}</div>
-    <div><h4>Add-ons</h4>${kv([['KPI dashboard', p.kpi.requested ? `Yes · ${esc(p.kpi.practiceArea)}` : 'No'], ['Automation review page', p.review.requested ? `Yes · audience “${esc(p.review.audience)}” · healthcare: ${p.review.smsHealthcare ? 'yes' : 'no'}` : 'No']])}</div>
-    <div id="rvWebforms"><h4>Webforms</h4>${kv(f.webforms)}</div>
-    <div><h4>Social links</h4>${kv(f.social)}</div>
-    <div><h4>Advanced</h4>${kv(f.settings)}</div>
-    <div><h4>Internal</h4>${kv([['Created by', esc(p.createdBy)], ['Package / notes', esc(p.notes).replace(/\n/g, '<br>')]])}</div>
+    ${kv(rows)}
+    <div class="cfticks"><p class="lbl">Ticked</p>${kv(ticks)}</div>
+    <details class="cfmore"><summary>Everything else <span class="hint">CSM, Mastersheet, ${nSocial} social link${nSocial === 1 ? '' : 's'}, ${nAdv} advanced setting${nAdv === 1 ? '' : 's'}, notes</span></summary><div class="rv">
+      <div><h4>Webforms</h4>${kv(f.webforms.filter(([k]) => k !== 'Brand'))}</div>
+      <div><h4>Social links</h4>${kv(f.social)}</div><div><h4>Advanced</h4>${kv(f.settings)}</div>
+      <div><h4>Internal</h4>${kv([['Created by', esc(p.createdBy)], ['Package / notes', esc(p.notes).replace(/\n/g, '<br>')], ['LFMP CRM contact', p.lfmpContactId ? `<a href="${esc(FC.crmLink(p.lfmpContactId))}" target="_blank" rel="noopener">Client in LFMP CRM ↗</a>` : '']])}</div>
+    </div></details>
     <p class="ferr" id="createErr" role="alert"></p>
-    <div class="formfoot"><button class="btn big" type="button" data-act="backedit">Back to edit</button><button class="btn primary big" type="button" id="createBtn" data-act="create">Create sub-account</button></div>
-  </div>`;
-  $('reviewView').scrollIntoView({ block: 'start' }); window.scrollTo(0, 0);
+    <div class="btnrow cfbtns"><button class="btn big" type="button" data-act="backedit">Go back and edit</button><button class="btn primary big" type="button" id="createBtn" data-act="create">Yes, create sub-account</button></div>
+  </div>` });
+  $('createBtn').focus({ preventScroll: true });   // the popup opens at its top (title + business name first), also on phones
+  const dlg = document.querySelector('#ovl .dlg'); if (dlg) dlg.scrollTop = 0;
 }
 
 async function submitCreate() {
-  const btn = $('createBtn'); if (btn.disabled) return;
+  const btn = $('createBtn'); if (!btn || btn.disabled || state.creating) return;   // a double click = one sub-account
+  state.creating = true;
   btn.disabled = true; btn.textContent = 'Sending…';
+  for (const b of document.querySelectorAll('#confirmDlg [data-act="backedit"]')) b.disabled = true;
   const requestId = S.newRequestId();
   const payload = { ...state.form, requestId };
   try {
     const t0 = await dispatch('create.yml', { payload: JSON.stringify(payload), request_id: requestId });
+    closeDialog();
     startRunView({ requestId, payload, t0 });
-  } catch (e) { $('createErr').textContent = `Couldn't send it to GitHub: ${e.message}`; btn.disabled = false; btn.textContent = 'Create sub-account'; }
+  } catch (e) {
+    $('createErr').textContent = `Couldn't send it to GitHub: ${e.message}`; btn.disabled = false; btn.textContent = 'Yes, create sub-account';
+    for (const b of document.querySelectorAll('#confirmDlg [data-act="backedit"]')) b.disabled = false;
+  } finally { state.creating = false; }
 }
 
 // ---------------------------------------------------------------- progress view
@@ -1052,7 +1128,7 @@ function stopRun() { if (state.run) { state.run.stopped = true; clearInterval(st
 function startRunView({ requestId, payload, t0, resume, minAttempt = 0 }) {
   stopRun();
   selectTab('new');
-  $('formView').hidden = true; $('reviewView').hidden = true; $('runView').hidden = false;
+  $('formView').hidden = true; $('runView').hidden = false;
   const run = state.run = { requestId, payload, minAttempt, t0: t0 || Date.now(), stopped: false, ghRun: null, file: null, sentOk: !resume, startedAt: null, missSince: Date.now() };
   $('runView').innerHTML = `<div class="runhead"><div><h2 id="runTitle">${esc(payload?.businessName || 'Sub-account')}</h2><p class="sub">Request <span class="mono">${esc(requestId)}</span> · You can leave this page: the run continues and the record will show it.</p></div><span class="note">Elapsed <b class="elapsed" id="runElapsed">0:00</b></span></div>
     <ol class="steps" id="runSteps">${STEPS.map(([k, t, d]) => `<li class="step pending" data-k="${k}"><span class="ic" aria-hidden="true"></span><span class="t">${esc(t)}</span><span class="d">${esc(d || '')}</span><div class="e"></div><div class="slot"></div></li>`).join('')}</ol>
@@ -1209,7 +1285,7 @@ async function retry({ allowDuplicate = false } = {}) {
 function backToForm() {
   const p = state.run?.file?.payload || state.run?.payload;
   stopRun();
-  $('runView').hidden = true; $('reviewView').hidden = true; $('formView').hidden = false;
+  $('runView').hidden = true; $('formView').hidden = false;
   if (p) fillForm(p);
   window.scrollTo(0, 0);
 }
@@ -1261,7 +1337,8 @@ document.addEventListener('click', e => {
   else if (act === 'refreshsnaps') refreshSnapshots(a);
   else if (act === 'allowdup') { state.allowDuplicate = true; onFormInput({ target: {} }); }
   else if (act === 'undodup') { state.allowDuplicate = false; onFormInput({ target: {} }); }
-  else if (act === 'backedit') { $('reviewView').hidden = true; $('formView').hidden = false; window.scrollTo(0, 0); }
+  else if (act === 'backedit') { if (!a.disabled) closeDialog(); }
+  else if (act.startsWith('fc')) FCU.onAct(act, a);
   else if (act === 'create') submitCreate();
   else if (act === 'retry') retry();
   else if (act === 'createanyway') retry({ allowDuplicate: true });
@@ -1304,6 +1381,9 @@ document.addEventListener('input', onCardInput);
 document.addEventListener('change', onCardInput);
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'lk-in') { e.preventDefault(); document.querySelector('[data-act="savelink"]')?.click(); } });
 
+document.addEventListener('submit', e => { if (FCU.onSubmit(e)) return; });
+FCU.initFind({ dispatch, findRun, getJSON, esc, ICON, newRequestId: () => S.newRequestId(), pollMs: POLL_MS, slowMs: Number(CFG.findSlowMs) || 0, subaccounts: () => state.subaccounts, findDuplicates: S.findDuplicates,
+  onPick: values => { const n = applyGhl(values); return n; }, onClear: () => clearGhl(), onMode: () => { paintFormVis(); paintGhlMarks(); } });
 K.initKpi({ gh, saveRecord, record: id => state.records.find(x => x.id === id), esc, ICON, toast, copy, who: () => whoName(), cfg: CFG,
   newRequestId: () => S.newRequestId(), paintList: () => paintList(), sleep, pollMs: POLL_MS,
   detailsOpen: () => ($('detBody') ? state.detailsId : null), paintDetails: () => paintDetails() });

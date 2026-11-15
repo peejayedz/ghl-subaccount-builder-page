@@ -2,6 +2,18 @@
   "_about": "What's new cards for the builder page (newest first). Plain words only: no file names, commits, secrets or workflow names. CHANGELOG.md is the developer history and shows under each card's Technical details.",
   "versions": [
     {
+      "version": "1.4.0",
+      "date": "Nov 16",
+      "title": "Find the client in GHL instead of typing",
+      "items": [
+        { "type": "new", "text": "New sub-account now starts with two choices: Find client in GHL, or Enter details manually. Switching between them keeps what you typed." },
+        { "type": "new", "text": "Search LFMP's CRM by name, firm or email. You see the search working step by step (about 30 seconds), then up to 10 matches with their LFMP or WPP client tag, and a warning if that client already has a sub-account." },
+        { "type": "new", "text": "Use this client fills the form: business name, phone, website, address, time zone, primary contact and brand. Filled fields say From GHL, the ones still missing are highlighted, and everything stays editable." },
+        { "type": "new", "text": "Pressing Create now opens a short summary to check first. Nothing is created until you press Yes, create sub-account." },
+        { "type": "new", "text": "Clients filled from GHL get a Client in LFMP CRM link in their details." }
+      ]
+    },
+    {
       "version": "1.3.0",
       "date": "Nov 15",
       "title": "The old Builder password is gone",

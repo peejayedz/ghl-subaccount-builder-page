@@ -5,7 +5,7 @@
 import { ALL_TIMEZONE_IDS } from './timezones.js';
 import { BRANDS, checkLink } from './webforms.js';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.4.0';
 
 // ---------- option lists ----------
 export const PRACTICE = ['Personal Injury', 'Family Law', 'Criminal Defense', 'Immigration', 'Estate Planning', 'Employment', 'Bankruptcy', 'Business/Corporate', 'Other'];
@@ -155,6 +155,8 @@ export function validate(p, { snapshotIds } = {}) {
   req('createdBy', 'Created by');
   if (p.notes && p.notes.length > 2000) e.notes = 'Notes are too long (2000 characters max).';
   if (p.requestId !== undefined && !/^[0-9]{8}-[0-9]{6}-[a-z0-9]{4}$/.test(p.requestId)) e.requestId = 'Bad request id.';
+  // Optional (v1.4.0): the LFMP CRM contact the form was filled from ("Find client in GHL").
+  if (p.lfmpContactId && !/^[A-Za-z0-9]{8,40}$/.test(p.lfmpContactId)) e.lfmpContactId = 'The LFMP contact ID looks wrong. Search again or clear it.';
   return e;
 }
 
