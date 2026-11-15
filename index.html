@@ -11,7 +11,8 @@
 <link rel="preload" href="fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/barlow-condensed-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="lfmp-ui.css?v=1.1.0">
-<link rel="stylesheet" href="app.css?v=1.1.0">
+<link rel="stylesheet" href="app.css?v=1.2.0">
+<link rel="stylesheet" href="lfmp-login.css?v=1.2.0">
 <script src="config.js"></script>
 </head>
 <body>
@@ -47,8 +48,8 @@
       <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub → Fine-grained tokens → Generate new token</a>.</li>
       <li><b>Token name:</b> Sub-account Builder. <b>Expiration:</b> 90 days (or your choice).</li>
       <li><b>Resource owner:</b> <span class="mono" id="tokOwner">the account that owns the builder repo</span>.</li>
-      <li><b>Repository access:</b> Only select repositories → <span class="mono">ghl-subaccount-builder</span> (only this one).</li>
-      <li><b>Permissions → Repository:</b> Actions: <b>Read and write</b>. Contents: <b>Read and write</b>. Metadata: Read (added automatically).</li>
+      <li><b>Repository access:</b> Only select repositories → <span class="mono">ghl-subaccount-builder</span> and <span class="mono">leadpro-kpi</span> (one token for the Builder and the KPI admin).</li>
+      <li><b>Permissions → Repository:</b> Actions, Contents and Secrets: <b>Read and write</b>. Variables: <b>Read-only</b>. Metadata: Read (added automatically).</li>
       <li>Generate, copy the token and paste it below. If the owner is an organization that needs approval, an owner approves it under Org settings → Personal access tokens → Pending requests.</li>
     </ol>
   </section>
@@ -67,10 +68,11 @@
   <div class="wrapx">
     <header class="top">
       <a class="mark" href="./" title="LFMP · Sub-account builder">LFMP</a>
+      <span class="toolchip" aria-label="You are in: Builder">Builder</span>
       <nav class="nav" aria-label="LFMP tools">
         <a href="./" aria-current="page" class="tab" role="tab" id="tab-list" data-tab="list" aria-selected="true" aria-controls="panel-list">Clients <span class="count" id="recCount">0</span></a>
-        <a href="https://peejayedz.github.io/leadpro-kpi/admin/" target="_blank" rel="noopener">KPI admin ↗</a>
-        <a href="https://peejayedz.github.io/automation-review/" target="_blank" rel="noopener">Review ↗</a>
+        <a href="/leadpro-kpi/admin/">KPI admin</a>
+        <a href="/automation-review/admin/">Review</a>
       </nav>
       <div class="topr">
         <div class="upd" aria-live="polite">Last refresh<b id="lastRefresh">…</b><span class="kept" id="refreshAgo"></span></div>
@@ -95,8 +97,8 @@
   <nav class="bnav" aria-label="Sections">
     <button type="button" data-tab="list" class="bn on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg>Clients</button>
     <button type="button" data-tab="new" class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>New</button>
-    <a class="bn" href="https://peejayedz.github.io/leadpro-kpi/admin/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 20V12M12 20V6M18 20v-9"/></svg>KPI</a>
-    <a class="bn" href="https://peejayedz.github.io/automation-review/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Review</a>
+    <a class="bn" href="/leadpro-kpi/admin/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 20V12M12 20V6M18 20v-9"/></svg>KPI</a>
+    <a class="bn" href="/automation-review/admin/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Review</a>
     <button type="button" class="bn" data-act="more"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>More</button>
   </nav>
 </div>

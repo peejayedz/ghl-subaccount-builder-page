@@ -498,3 +498,15 @@ details.tech pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--pa
   .wntoast{right:16px;bottom:84px}
   .toast{bottom:96px}
 }
+
+/* ---------- tool colour (v1.2.0): Builder = gold (as before). Only the top band, the BUILDER chip, the menu underline and
+   the headline eyebrow + accent use it. Same rules on the KPI admin (red) and the Automation Review admin (teal). ---------- */
+:root{--tool:#a8741f;--tool-ink:#8a5d15}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--tool:#d9a64e;--tool-ink:#d9a64e}}
+:root[data-theme="dark"]{--tool:#d9a64e;--tool-ink:#d9a64e}
+body:has(#appView:not([hidden]))::before{content:"";display:block;height:4px;background:var(--tool)}
+.toolchip{display:inline-flex;align-items:center;height:24px;padding:0 9px;border:1px solid var(--tool);color:var(--tool-ink);font:700 10.5px/1 var(--b);letter-spacing:.14em;text-transform:uppercase;text-decoration:none;flex:0 0 auto;margin-left:-14px}
+.nav a[aria-current="page"]{border-bottom-color:var(--tool)}
+.hero .ey,.hero .disp .g,.formwrap .head .ey,.formwrap .head .disp .g{color:var(--tool-ink)}
+@media (max-width:760px){.toolchip{margin-left:0}}
+@media (max-width:430px){.top .upd{display:none}}   /* phone: room for the BUILDER chip; the last refresh time stays in More → Refresh list */

@@ -7,6 +7,7 @@ import * as K from './kpi.js';
 import * as RV from './review-ui.js';
 import * as RVR from './review.js';
 import * as ST from './status.js';
+import { createLogin } from './lfmp-login.js';
 
 const CFG = window.BUILDER_CONFIG;
 const API = CFG.api.replace(/\/$/, '');
@@ -43,6 +44,9 @@ const ICON = {
 };
 
 let lock = null, aesKey = null, ghToken = null;
+// One login (v1.2.0): with page/lfmp-lock.json the shared sign-in (lfmp-login.js) unlocks this page, the KPI admin and the
+// Automation Review admin together, and the GitHub token lives in its shared vault. Without it (legacy) the old lock runs.
+let login = null, shared = false;
 const state = { records: [], attention: [], snapshots: [], snapshotNames: {}, subaccounts: [], loaded: false, form: null, run: null,
   desk: { csm: [], projects: [] }, deskSettings: {}, settings: {}, sending: {}, wfProj: {}, editLink: null, detailsId: null };
 
@@ -105,6 +109,7 @@ async function deriveFromPassword(pw) {
 }
 function sameBytes(a, b) { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a[i] ^ b[i]; return d === 0; }
 async function saveToken(token) {
+  if (shared) { await login.vaultSet({ gh: token }); return; }
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, enc.encode(token)));
   store.set(TOKEN_KEY, JSON.stringify({ v: 1, alg: 'AES-GCM', iv: toB64(iv), ct: toB64(ct) }));
@@ -123,6 +128,10 @@ async function boot() {
   paintThemeBtn();
   for (const b of document.querySelectorAll('[data-eye]')) b.innerHTML = ICON.eye;
   if (!window.crypto?.subtle) { show('setupView'); $('setupErr').textContent = "This browser can't run the builder. Use an up-to-date Chrome, Safari, Edge or Firefox."; return; }
+  login = createLogin({ tool: 'builder', onUnlock: sharedUnlocked, onLock: () => lockNow({ fromLogin: true }) });
+  const mode = await login.start();
+  if (mode === 'shared') return;
+  if (mode === 'error') { show('setupView'); $('setupErr').textContent = login.error; return; }
   try {
     const r = await fetch(`./lock.json?t=${Date.now()}`, { cache: 'no-store' });
     if (r.status === 404) { show('setupView'); return; }
@@ -150,6 +159,14 @@ $('lockForm').addEventListener('submit', async e => {
     $('lockPw').select();
   } finally { $('lockGo').disabled = false; $('lockGo').textContent = 'Unlock'; }
 });
+
+// Shared sign-in done (password typed, or a live session from any of the three tools in this tab).
+async function sharedUnlocked({ vault, reset }) {
+  shared = true; aesKey = login.key();
+  if (vault.gh) { ghToken = vault.gh; return openApp(); }
+  askToken(reset ? 'The saved GitHub token was locked with an older admin password, so it was cleared. Paste the token again.'
+    : 'Connect GitHub once for the Builder and the KPI admin. The token is saved in this browser only, encrypted with the admin password.');
+}
 
 function askToken(why) {
   show('tokenView'); $('tokenErr').textContent = ''; $('permList').hidden = true;
@@ -212,7 +229,11 @@ $('tokenForm').addEventListener('submit', async e => {
   finally { $('tokenGo').disabled = false; $('tokenGo').textContent = 'Connect and check'; }
 });
 
-function lockNow() { aesKey = null; ghToken = null; stopRun(); closeMenus(); $('wnToast').hidden = true; state.loaded = false; $('panel-list').innerHTML = ''; $('panel-new').innerHTML = ''; closeDialog(); show('lockView'); $('lockPw').value = ''; $('lockPw').focus(); }
+function lockNow({ fromLogin = false } = {}) {
+  if (shared && !fromLogin) { login.lock(''); return; }   // Lock = all three tools; the shared login calls back here
+  aesKey = null; ghToken = null; stopRun(); closeMenus(); $('wnToast').hidden = true; state.loaded = false; $('panel-list').innerHTML = ''; $('panel-new').innerHTML = ''; closeDialog();
+  if (shared) { show(null); return; }
+  show('lockView'); $('lockPw').value = ''; $('lockPw').focus(); }
 
 // ---------------------------------------------------------------- GitHub API
 function ghError(status, msg, path) {
@@ -1277,7 +1298,7 @@ document.addEventListener('click', e => {
   else if (act === 'newsgot') markNewsSeen();
   else if (act === 'closedet') closeDialog();
   else if (act === 'more') openDialog({ title: 'More', cancel: 'Close', body: `<div class="rv"><div><h4>Theme</h4><div class="themeseg">${themeSegHtml()}</div></div><div class="btnrow" style="margin:0;flex-direction:column;align-items:stretch"><button class="btn big" type="button" data-act="reload">${ICON.sync} Refresh list</button><button class="btn big" type="button" data-act="news">What's new · v${esc(S.VERSION)}</button><button class="btn big" type="button" data-act="forget">Forget token</button><button class="btn big" type="button" data-act="lock">Lock</button></div></div>` });
-  else if (act === 'forget') openDialog({ title: 'Forget token in this browser?', body: '<p class="sub">The saved GitHub token is removed from this browser. You will need to paste a token again next time. The token itself stays valid on GitHub; revoke it there if this device is lost.</p>', ok: 'Forget token', danger: true, onOk: () => { store.set(TOKEN_KEY, null); ghToken = null; stopRun(); closeDialog(); askToken('Token removed from this browser. Paste a token to continue.'); } });
+  else if (act === 'forget') openDialog({ title: 'Forget token in this browser?', body: `<p class="sub">The saved GitHub token${shared ? ' (shared with the KPI admin)' : ''} is removed from this browser. You will need to paste a token again next time. The token itself stays valid on GitHub; revoke it there if this device is lost.</p>`, ok: 'Forget token', danger: true, onOk: async () => { if (shared) await login.vaultSet({ gh: null }); store.set(TOKEN_KEY, null); ghToken = null; stopRun(); closeDialog(); askToken('Token removed from this browser. Paste a token to continue.'); } });
   else if (act === 'reload') { closeDialog(); loadAll(); }
   else if (act === 'showtests') { state.showTests = true; store.set(SHOW_TESTS, '1'); if ($('showTests')) $('showTests').checked = true; paintList(); }
   else if (act === 'gonew') { closeDialog(); if (!state.run) { selectTab('new'); $('formView').hidden = false; } else newForm(); window.scrollTo(0, 0); }

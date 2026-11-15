@@ -3,6 +3,16 @@
 All notable changes to the LFMP Sub-account Builder. Versions follow semantic versioning.
 This file is the developer history. The page's "What's new" shows the plain-language cards in `page/whats-new.json` and this text under "Technical details".
 
+## [1.2.0] - 2026-11-15
+
+- One login for the Builder, KPI admin and Automation Review admin (`page/lfmp-login.js` + `page/lfmp-login.css`, byte-identical copies in leadpro-kpi `admin/` and automation-review `admin/`). With `page/lfmp-lock.json` (written by leadpro-kpi `scripts/set-shared-password.mjs`, same file in all three) the page shows the shared split-screen sign-in instead of its own lock. PBKDF2-SHA256 210,000 iterations as before; the password is never stored. The unlocked key (never the password) is kept in sessionStorage `lfmp-session` for the tab: switching tools in the same tab never asks again; it ends on Lock (any tool, and every other tab via `lfmp-lock-at`), 30 minutes without activity, or closing the tab. Without `lfmp-lock.json` the old `lock.json` lock runs unchanged.
+- The GitHub token moves into the shared encrypted vault (localStorage `lfmp-vault`, AES-GCM with the shared key, also holding the Automation Review admin key). Connect once for the Builder and the KPI admin; the token help now asks for both repos (Actions, Contents, Secrets read/write; Variables read). Forget token clears it for both. The old `sab-gh-token` is dropped when the vault gets a token.
+- Wrong-password limit: 5 wrong in a row pauses sign-in for 2 minutes in every tool and tab, with a live countdown; Forgot password? still works. Only a count and an end time are kept (`lfmp-login-guard`).
+- Top bar: KPI admin and Review open in the same tab (no new tab, no ↗), also in the phone bar; Review now goes to the new Review admin (`/automation-review/admin/`).
+- Tool colour: 4px band across the top, a BUILDER chip next to the LFMP mark, the menu underline and the headline eyebrow + accent use the tool colour (Builder gold `#d9a64e` / light `#a8741f`; text in light mode `#8a5d15` for AA). Phones hide the last-refresh line to make room for the chip.
+- Fix: locking while the list was still loading showed "Couldn't unlock: …" on the lock screen.
+- Tests: `tests/e2e/one-login.mjs` (47 checks across the three tools on one local site: sign in once and move both ways, Back, reload, Lock everywhere incl. another tab, 30-minute idle, wrong password, 5 wrong → countdown survives reload and other tools, Forget token, client pages never prompt or read the vault, colours + AA at 1440/390 light/dark, the old lock without `lfmp-lock.json`).
+
 ## [1.1.0] - 2026-11-15
 
 - New look (WC6 style in LFMP colours), the same as the KPI admin page: dark and light themes with **Auto · Light · Dark** (Auto follows the Mac or iPhone setting; the choice is remembered), one gold accent, Barlow Condensed headings, Inter text, square corners. The shared look is `page/lfmp-ui.css` + `page/fonts/` (SIL OFL 1.1, `page/fonts/OFL.txt`), copied unchanged from leadpro-kpi `admin/` (sha256 `6e67f091…a890fb`); builder-only styles stay in `page/app.css`.

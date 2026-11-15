@@ -2,6 +2,18 @@
   "_about": "What's new cards for the builder page (newest first). Plain words only: no file names, commits, secrets or workflow names. CHANGELOG.md is the developer history and shows under each card's Technical details.",
   "versions": [
     {
+      "version": "1.2.0",
+      "date": "Nov 15",
+      "title": "One login for all three tools, and a colour for each",
+      "items": [
+        { "type": "new", "text": "One admin password now opens the Builder, the KPI admin and the Review admin. Sign in once and move between them from the top menu without being asked again." },
+        { "type": "new", "text": "Each tool has its own colour so you always know where you are: gold for the Builder, red for the KPI admin, teal for Review. Main buttons stay gold." },
+        { "type": "improved", "text": "Clients · KPI admin · Review open in the same window. Lock on any tool locks all three; 30 minutes without activity locks too." },
+        { "type": "improved", "text": "After 5 wrong passwords in a row, sign-in pauses for 2 minutes with a countdown. \"Forgot password?\" explains how to set a new one." },
+        { "type": "improved", "text": "One GitHub token is shared with the KPI admin, so you connect it once." }
+      ]
+    },
+    {
       "version": "1.1.0",
       "date": "Nov 15",
       "title": "A new look, and every client at a glance",
