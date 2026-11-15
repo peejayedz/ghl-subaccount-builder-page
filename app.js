@@ -106,9 +106,11 @@ async function boot() {
   if ($('tokOwner')) $('tokOwner').textContent = OWNER;
   paintThemeBtn();
   for (const b of document.querySelectorAll('[data-eye]')) b.innerHTML = ICON.eye;
-  if (!window.crypto?.subtle) { show('setupView'); $('setupErr').textContent = "This browser can't run the builder. Use an up-to-date Chrome, Safari, Edge or Firefox."; return; }
+  // One message only: the page's own "file is missing" text, or the other reason in its place.
+  const notReady = msg => { show('setupView'); if (msg && !/lfmp-lock\.json is missing/.test(msg)) $('setupMsg').textContent = msg; };
+  if (!window.crypto?.subtle) { notReady("This browser can't run the builder. Use an up-to-date Chrome, Safari, Edge or Firefox."); return; }
   login = createLogin({ tool: 'builder', onUnlock: unlocked, onLock: () => lockNow({ fromLogin: true }) });
-  if (await login.start() === 'error') { show('setupView'); $('setupErr').textContent = login.error; }
+  if (await login.start() === 'error') notReady(login.error);
 }
 
 // Shared sign-in done (password typed, or a live session from any of the three tools in this tab).
