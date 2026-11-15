@@ -3,6 +3,12 @@
 All notable changes to the LFMP Sub-account Builder. Versions follow semantic versioning.
 This file is the developer history. The page's "What's new" shows the plain-language cards in `page/whats-new.json` and this text under "Technical details".
 
+## [1.3.0] - 2026-11-15
+
+- Removed the old per-page lock now that the shared one login is live (PJ signed in on all three tools): the lock screen, `page/lock.json`, `scripts/set-builder-password.mjs`, the page's own PBKDF2/token code and the `sab-gh-token` storage. The page signs in only through `page/lfmp-login.js` + `page/lfmp-lock.json`; without `lfmp-lock.json` it shows "Sign-in not ready" with the `set-shared-password.mjs` step. Copies of the removed files are in PJ's workspace archive.
+- `lfmp-login.js` (shared, byte-identical in the three tools): a missing `lfmp-lock.json` is now an error (no "legacy" mode); every sign-in removes the old per-page token blobs (`sab-gh-token`, `leadpro-admin-gh-token`) and the old KPI session; every interaction checks the 30-minute idle expiry (an expired session locks on the next click; before, a click within 20 s of the last write waited for the 15-second timer).
+- Tests: the e2e suites (run, design, kpi, review, review-ghl) sign in through the shared login (the harness serves a test `lfmp-lock.json`); `tests/e2e/one-login.mjs` checks all three tools show the setup message without `lfmp-lock.json`.
+
 ## [1.2.0] - 2026-11-15
 
 - One login for the Builder, KPI admin and Automation Review admin (`page/lfmp-login.js` + `page/lfmp-login.css`, byte-identical copies in leadpro-kpi `admin/` and automation-review `admin/`). With `page/lfmp-lock.json` (written by leadpro-kpi `scripts/set-shared-password.mjs`, same file in all three) the page shows the shared split-screen sign-in instead of its own lock. PBKDF2-SHA256 210,000 iterations as before; the password is never stored. The unlocked key (never the password) is kept in sessionStorage `lfmp-session` for the tab: switching tools in the same tab never asks again; it ends on Lock (any tool, and every other tab via `lfmp-lock-at`), 30 minutes without activity, or closing the tab. Without `lfmp-lock.json` the old `lock.json` lock runs unchanged.

@@ -14,7 +14,6 @@ const API = CFG.api.replace(/\/$/, '');
 const R = `/repos/${CFG.repo}`;
 const OWNER = CFG.repo.split('/')[0];
 const BRANCH = CFG.branch || 'main';
-const TOKEN_KEY = 'sab-gh-token';
 const WHO_KEY = 'sab-created-by';
 const POLL_MS = Number(CFG.pollMs) || 5000;
 
@@ -43,15 +42,15 @@ const ICON = {
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>',
 };
 
-let lock = null, aesKey = null, ghToken = null;
-// One login (v1.2.0): with page/lfmp-lock.json the shared sign-in (lfmp-login.js) unlocks this page, the KPI admin and the
-// Automation Review admin together, and the GitHub token lives in its shared vault. Without it (legacy) the old lock runs.
-let login = null, shared = false;
+let ghToken = null;
+// One login (v1.2.0; the old page lock was removed in v1.3.0): the shared sign-in (lfmp-login.js + lfmp-lock.json) unlocks
+// this page, the KPI admin and the Automation Review admin together, and the GitHub token lives in its shared vault.
+let login = null;
 const state = { records: [], attention: [], snapshots: [], snapshotNames: {}, subaccounts: [], loaded: false, form: null, run: null,
   desk: { csm: [], projects: [] }, deskSettings: {}, settings: {}, sending: {}, wfProj: {}, editLink: null, detailsId: null };
 
 // ---------------------------------------------------------------- views
-function show(view) { for (const v of ['setupView', 'lockView', 'tokenView', 'appView']) $(v).hidden = v !== view; }
+function show(view) { for (const v of ['setupView', 'tokenView', 'appView']) $(v).hidden = v !== view; }
 function toast(msg, ms = 2600) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, ms); }
 async function copy(text, what = 'Copied') {
   try { await navigator.clipboard.writeText(text); toast(`${what} copied`); }
@@ -97,28 +96,8 @@ async function showNewsToast() {
   $('wnToast').hidden = false;
 }
 
-// ---------------------------------------------------------------- lock (same method as the KPI admin page)
-// PBKDF2-SHA256(password, salt, iterations) -> 64 bytes: 0-31 public verifier, 32-63 AES-GCM key for the token.
-async function deriveFromPassword(pw) {
-  const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
-  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: fromB64(lock.salt), iterations: lock.iterations }, base, 512));
-  const verifier = bits.slice(0, 32);
-  const key = await crypto.subtle.importKey('raw', bits.slice(32, 64), 'AES-GCM', false, ['encrypt', 'decrypt']);
-  bits.fill(0);
-  return { verifier, key };
-}
-function sameBytes(a, b) { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a[i] ^ b[i]; return d === 0; }
-async function saveToken(token) {
-  if (shared) { await login.vaultSet({ gh: token }); return; }
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, enc.encode(token)));
-  store.set(TOKEN_KEY, JSON.stringify({ v: 1, alg: 'AES-GCM', iv: toB64(iv), ct: toB64(ct) }));
-}
-async function loadToken() {
-  const raw = store.get(TOKEN_KEY); if (!raw) return null;
-  try { const { iv, ct } = JSON.parse(raw); return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(iv) }, aesKey, fromB64(ct))); }
-  catch { return undefined; }
-}
+// ---------------------------------------------------------------- sign-in (shared one login)
+const saveToken = token => login.vaultSet({ gh: token });
 
 async function boot() {
   $('ver').textContent = `v${S.VERSION}`;
@@ -128,41 +107,12 @@ async function boot() {
   paintThemeBtn();
   for (const b of document.querySelectorAll('[data-eye]')) b.innerHTML = ICON.eye;
   if (!window.crypto?.subtle) { show('setupView'); $('setupErr').textContent = "This browser can't run the builder. Use an up-to-date Chrome, Safari, Edge or Firefox."; return; }
-  login = createLogin({ tool: 'builder', onUnlock: sharedUnlocked, onLock: () => lockNow({ fromLogin: true }) });
-  const mode = await login.start();
-  if (mode === 'shared') return;
-  if (mode === 'error') { show('setupView'); $('setupErr').textContent = login.error; return; }
-  try {
-    const r = await fetch(`./lock.json?t=${Date.now()}`, { cache: 'no-store' });
-    if (r.status === 404) { show('setupView'); return; }
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    lock = await r.json();
-    if (!lock.salt || !lock.verifier || !(lock.iterations >= 100000)) throw new Error('lock.json is incomplete');
-  } catch (e) { show('setupView'); $('setupErr').textContent = `Couldn't read lock.json (${e.message}).`; return; }
-  show('lockView'); $('lockPw').focus();
+  login = createLogin({ tool: 'builder', onUnlock: unlocked, onLock: () => lockNow({ fromLogin: true }) });
+  if (await login.start() === 'error') { show('setupView'); $('setupErr').textContent = login.error; }
 }
 
-$('lockForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const pw = $('lockPw').value; if (!pw) return;
-  $('lockGo').disabled = true; $('lockGo').textContent = 'Checking…'; $('lockErr').textContent = '';
-  try {
-    const { verifier, key } = await deriveFromPassword(pw);
-    if (!sameBytes(verifier, fromB64(lock.verifier))) throw new Error('wrong');
-    aesKey = key; $('lockPw').value = '';
-    const t = await loadToken();
-    if (t === undefined) { store.set(TOKEN_KEY, null); return askToken('The token saved in this browser was locked with a different password, so it was removed. Paste a token again.'); }
-    if (!t) return askToken();
-    ghToken = t; await openApp();
-  } catch (err) {
-    $('lockErr').textContent = err.message === 'wrong' ? "That password didn't work. Check caps lock and try again." : `Couldn't unlock: ${err.message}`;
-    $('lockPw').select();
-  } finally { $('lockGo').disabled = false; $('lockGo').textContent = 'Unlock'; }
-});
-
 // Shared sign-in done (password typed, or a live session from any of the three tools in this tab).
-async function sharedUnlocked({ vault, reset }) {
-  shared = true; aesKey = login.key();
+async function unlocked({ vault, reset }) {
   if (vault.gh) { ghToken = vault.gh; return openApp(); }
   askToken(reset ? 'The saved GitHub token was locked with an older admin password, so it was cleared. Paste the token again.'
     : 'Connect GitHub once for the Builder and the KPI admin. The token is saved in this browser only, encrypted with the admin password.');
@@ -230,10 +180,9 @@ $('tokenForm').addEventListener('submit', async e => {
 });
 
 function lockNow({ fromLogin = false } = {}) {
-  if (shared && !fromLogin) { login.lock(''); return; }   // Lock = all three tools; the shared login calls back here
-  aesKey = null; ghToken = null; stopRun(); closeMenus(); $('wnToast').hidden = true; state.loaded = false; $('panel-list').innerHTML = ''; $('panel-new').innerHTML = ''; closeDialog();
-  if (shared) { show(null); return; }
-  show('lockView'); $('lockPw').value = ''; $('lockPw').focus(); }
+  if (!fromLogin) { login.lock(''); return; }   // Lock = all three tools; the shared login calls back here
+  ghToken = null; stopRun(); closeMenus(); $('wnToast').hidden = true; state.loaded = false; $('panel-list').innerHTML = ''; $('panel-new').innerHTML = ''; closeDialog();
+  show(null); }
 
 // ---------------------------------------------------------------- GitHub API
 function ghError(status, msg, path) {
@@ -1298,7 +1247,7 @@ document.addEventListener('click', e => {
   else if (act === 'newsgot') markNewsSeen();
   else if (act === 'closedet') closeDialog();
   else if (act === 'more') openDialog({ title: 'More', cancel: 'Close', body: `<div class="rv"><div><h4>Theme</h4><div class="themeseg">${themeSegHtml()}</div></div><div class="btnrow" style="margin:0;flex-direction:column;align-items:stretch"><button class="btn big" type="button" data-act="reload">${ICON.sync} Refresh list</button><button class="btn big" type="button" data-act="news">What's new · v${esc(S.VERSION)}</button><button class="btn big" type="button" data-act="forget">Forget token</button><button class="btn big" type="button" data-act="lock">Lock</button></div></div>` });
-  else if (act === 'forget') openDialog({ title: 'Forget token in this browser?', body: `<p class="sub">The saved GitHub token${shared ? ' (shared with the KPI admin)' : ''} is removed from this browser. You will need to paste a token again next time. The token itself stays valid on GitHub; revoke it there if this device is lost.</p>`, ok: 'Forget token', danger: true, onOk: async () => { if (shared) await login.vaultSet({ gh: null }); store.set(TOKEN_KEY, null); ghToken = null; stopRun(); closeDialog(); askToken('Token removed from this browser. Paste a token to continue.'); } });
+  else if (act === 'forget') openDialog({ title: 'Forget token in this browser?', body: `<p class="sub">The saved GitHub token (shared with the KPI admin) is removed from this browser. You will need to paste a token again next time. The token itself stays valid on GitHub; revoke it there if this device is lost.</p>`, ok: 'Forget token', danger: true, onOk: async () => { await login.vaultSet({ gh: null }); ghToken = null; stopRun(); closeDialog(); askToken('Token removed from this browser. Paste a token to continue.'); } });
   else if (act === 'reload') { closeDialog(); loadAll(); }
   else if (act === 'showtests') { state.showTests = true; store.set(SHOW_TESTS, '1'); if ($('showTests')) $('showTests').checked = true; paintList(); }
   else if (act === 'gonew') { closeDialog(); if (!state.run) { selectTab('new'); $('formView').hidden = false; } else newForm(); window.scrollTo(0, 0); }

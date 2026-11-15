@@ -11,31 +11,18 @@
 <link rel="preload" href="fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/barlow-condensed-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="lfmp-ui.css?v=1.1.0">
-<link rel="stylesheet" href="app.css?v=1.2.0">
-<link rel="stylesheet" href="lfmp-login.css?v=1.2.0">
+<link rel="stylesheet" href="app.css?v=1.3.0">
+<link rel="stylesheet" href="lfmp-login.css?v=1.3.0">
 <script src="config.js"></script>
 </head>
 <body>
 
-<!-- No lock.json yet -->
+<!-- The one login can't start (no lfmp-lock.json, or an old browser) -->
 <div class="gate" id="setupView" hidden><div class="card">
   <div class="gatehead"><span class="mark" aria-hidden="true">LFMP</span><p class="ey">LFMP · Sub-account builder</p></div>
-  <h1 class="disp">Set a <span class="g">password.</span></h1>
-  <p class="sub">This page has no password yet. In Terminal, in the builder repo folder, run <code class="mono">node scripts/set-builder-password.mjs</code>, then publish the page again.</p>
+  <h1 class="disp">Sign-in <span class="g">not ready.</span></h1>
+  <p class="sub">The shared admin password file (lfmp-lock.json) is missing. In Terminal, in the leadpro-kpi folder, run <code class="mono">node scripts/set-shared-password.mjs</code>, then publish the three tools.</p>
   <p class="ferr" id="setupErr"></p>
-</div></div>
-
-<!-- Lock -->
-<div class="gate" id="lockView" hidden><div class="card">
-  <div class="gatehead"><span class="mark" aria-hidden="true">LFMP</span><p class="ey">LFMP · Sub-account builder</p></div>
-  <div><h1 class="disp">Sub-account <span class="g">builder.</span></h1><p class="sub" style="margin-top:10px">Enter the builder password to continue.</p></div>
-  <form id="lockForm" autocomplete="off">
-    <label class="f" for="lockPw">Password
-      <span class="pw"><input type="password" id="lockPw" autocomplete="current-password" required><button type="button" class="eye" data-eye="lockPw" aria-label="Show password"></button></span>
-    </label>
-    <p class="ferr" id="lockErr" role="alert"></p>
-    <button class="btn p big" id="lockGo" type="submit" style="width:100%">Unlock</button>
-  </form>
 </div></div>
 
 <!-- Connect GitHub token -->

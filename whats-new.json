@@ -2,6 +2,15 @@
   "_about": "What's new cards for the builder page (newest first). Plain words only: no file names, commits, secrets or workflow names. CHANGELOG.md is the developer history and shows under each card's Technical details.",
   "versions": [
     {
+      "version": "1.3.0",
+      "date": "Nov 15",
+      "title": "The old Builder password is gone",
+      "items": [
+        { "type": "improved", "text": "The Builder now signs in only with the shared admin password (the same as the KPI admin and Review). The old Builder-only password and its screen were removed." },
+        { "type": "fixed", "text": "If 30 minutes pass without activity, the next click locks straight away (it could take up to 15 seconds)." }
+      ]
+    },
+    {
       "version": "1.2.0",
       "date": "Nov 15",
       "title": "One login for all three tools, and a colour for each",
