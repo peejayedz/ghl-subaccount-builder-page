@@ -3,6 +3,15 @@
 All notable changes to the LFMP Sub-account Builder. Versions follow semantic versioning.
 This file is the developer history. The page's "What's new" shows the plain-language cards in `page/whats-new.json` and this text under "Technical details".
 
+## [1.5.0] - 2026-11-16
+
+- Changed: the tools move to **https://dashboard.lawfirmmarketingpros.com** (the custom domain of the GitHub user site `peejayedz.github.io`, behind Cloudflare Access for team paths). New links use it: `KPI_PAGES` (`page/kpi.js`) and `REVIEW_BASE` (`page/review.js`, also used by `scripts/review/publish.mjs` to wait for Pages and by the Review card to load the review pages).
+- Changed: link checks (`page/webforms.js`) accept the new address **and** the old `https://peejayedz.github.io/…` for KPI and Review links (`KPI_PREFIXES`, `REVIEW_PREFIXES`); the error message names the new address. Saved records keep their old links, which GitHub redirects.
+- Unchanged: `APP_REDIRECT_URI` (`scripts/lib/ghl-app.mjs`) stays `https://peejayedz.github.io/lfmp-oauth/`, because it must match the redirect URI registered in the LeadPro Connector app (PJ, 16 Nov). GHL → old URL → 301 → callback page.
+- `lfmp-login.js` (shared, byte-identical in the three tools): the Forgot password help names the new site for the saved password-manager login.
+- Fix: What's new (toast and window) wraps long unbroken text such as the new address instead of scrolling sideways on phones (`overflow-wrap:anywhere`, `app.css?v=1.5.0`).
+- Tests: unit `webforms` (both addresses accepted, look-alikes refused, message names the new address), `publish`; e2e `kpi`, `review`, `run` (an old-address KPI link is still accepted; the What's new technical-details check follows this version).
+
 ## [1.4.1] - 2026-11-16
 
 - Changed: the Review card's client links now use the Review admin's names: **Link A · Plan + review** (was "A · Plan page (send this)") and **Link B · Review only** (was "B · Messages only (re-reviews)"). Same links, same order, Open + Copy unchanged. The client's Overview tab uses the same names (was "Review · Plan (A)" / "Review · Messages (B)"), so they match everywhere.

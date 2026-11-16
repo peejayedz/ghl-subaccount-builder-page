@@ -8,7 +8,7 @@ import { AGENCY_LOGOS } from './brand/agency-logos.js';
 
 export const TEMPLATE_ID = 'leadpro-standard';
 export const TEMPLATE_FILES = ['template', 'data', 'messages', 'plan'];
-export const REVIEW_BASE = 'https://peejayedz.github.io/automation-review/';
+export const REVIEW_BASE = 'https://dashboard.lawfirmmarketingpros.com/automation-review/';   // v1.5.0: was peejayedz.github.io (old links still redirect)
 export const PREVIEW_STATUS = 'Preview — tailor after kickoff';
 export const STEP_TYPES = ['start', 'sms', 'email', 'call', 'vm', 'team', 'end', 'chat'];
 export const STEP_WHO = ['patient', 'team'];

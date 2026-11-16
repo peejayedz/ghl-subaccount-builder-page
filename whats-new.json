@@ -2,6 +2,15 @@
   "_about": "What's new cards for the builder page (newest first). Plain words only: no file names, commits, secrets or workflow names. CHANGELOG.md is the developer history and shows under each card's Technical details.",
   "versions": [
     {
+      "version": "1.5.0",
+      "date": "Nov 16",
+      "title": "The tools have a new address",
+      "items": [
+        { "type": "improved", "text": "The Builder, KPI admin and Review admin now live at dashboard.lawfirmmarketingpros.com. Old peejayedz.github.io links still work: they forward to the new address." },
+        { "type": "improved", "text": "New KPI dashboard and review links use the new address. Links saved earlier on the old address are still accepted and keep working." }
+      ]
+    },
+    {
       "version": "1.4.1",
       "date": "Nov 16",
       "title": "Review links named like the Review admin",

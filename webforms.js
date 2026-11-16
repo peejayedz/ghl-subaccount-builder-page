@@ -6,8 +6,13 @@
 export const DESK_SITE = 'wpplfmp.teamwork.com';
 export const deskTicketUrl = id => `https://${DESK_SITE}/desk/tickets/${id}`;
 export const BRANDS = ['LFMP', 'WPP'];
-export const KPI_PREFIX = 'https://peejayedz.github.io/leadpro-kpi/';
-export const REVIEW_PREFIX = 'https://peejayedz.github.io/automation-review/';
+// v1.5.0: the tools moved to dashboard.lawfirmmarketingpros.com. Old peejayedz.github.io links still redirect, so both are accepted.
+export const SITE = 'https://dashboard.lawfirmmarketingpros.com/';
+export const OLD_SITE = 'https://peejayedz.github.io/';
+export const KPI_PREFIX = `${SITE}leadpro-kpi/`;
+export const REVIEW_PREFIX = `${SITE}automation-review/`;
+export const KPI_PREFIXES = [KPI_PREFIX, `${OLD_SITE}leadpro-kpi/`];
+export const REVIEW_PREFIXES = [REVIEW_PREFIX, `${OLD_SITE}automation-review/`];
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = s => String(s ?? '').trim();
@@ -31,7 +36,8 @@ export const isCsmTag = tagName => /^CSM\s*-\s*\S/i.test(String(tagName || ''));
 
 // ---------- links ----------
 // key, short label (list button), long label (details), what's missing (tooltip), rule
-const startsWith = (prefix, what) => v => (v.startsWith(prefix) ? '' : `${what} must start with ${prefix}`);
+// prefix: one string, or a list (first = the one named in the message; the rest are older addresses still accepted)
+const startsWith = (prefix, what) => { const all = [].concat(prefix); return v => (all.some(p => v.startsWith(p)) ? '' : `${what} must start with ${all[0]}`); };
 const host = (hosts, what) => v => {
   let u; try { u = new URL(v); } catch { return `${what}: paste the full link, starting with https://`; }
   return u.protocol === 'https:' && hosts.includes(u.hostname.toLowerCase()) ? '' : `${what} must be a link on ${hosts.join(' or ')}`;
@@ -41,11 +47,11 @@ export const LINKS = [
   { key: 'zap', short: 'Zap', label: 'Zap (Zapier)', missing: 'No Zap yet', check: startsWith('https://zapier.com/', 'Zap link') },
   { key: 'webhook', short: 'Webhook', label: 'Webhook URL', missing: 'No webhook yet', check: startsWith('https://hooks.zapier.com/hooks/catch/', 'Webhook URL'), noButton: true },
   { key: 'ticket', short: 'Ticket', label: 'Desk ticket', missing: 'No ticket yet', check: v => host([DESK_SITE], 'Ticket link')(v) || (ticketIdFromUrl(v) ? '' : 'Ticket link must include the ticket number, e.g. …/desk/tickets/3640383') },
-  { key: 'kpi', short: 'KPI', label: 'KPI dashboard', missing: 'No KPI dashboard yet', check: startsWith(KPI_PREFIX, 'KPI link') },
+  { key: 'kpi', short: 'KPI', label: 'KPI dashboard', missing: 'No KPI dashboard yet', check: startsWith(KPI_PREFIXES, 'KPI link') },
   { key: 'sheet', short: 'Sheet', label: 'Mastersheet', missing: 'No Mastersheet yet', check: startsWith('https://docs.google.com/spreadsheets/', 'Mastersheet link') },
   // Automation review (Phase 4): A = plan page (the default link, the list's "Review" button), B = messages page (re-reviews).
-  { key: 'review', short: 'Review', label: 'Review page A (plan)', missing: 'No review page yet', check: startsWith(REVIEW_PREFIX, 'Review link') },
-  { key: 'reviewMessages', short: 'Msgs', label: 'Review page B (messages)', missing: 'No review page yet', check: startsWith(REVIEW_PREFIX, 'Review link'), noButton: true },
+  { key: 'review', short: 'Review', label: 'Review page A (plan)', missing: 'No review page yet', check: startsWith(REVIEW_PREFIXES, 'Review link') },
+  { key: 'reviewMessages', short: 'Msgs', label: 'Review page B (messages)', missing: 'No review page yet', check: startsWith(REVIEW_PREFIXES, 'Review link'), noButton: true },
 ];
 export const LINK = Object.fromEntries(LINKS.map(l => [l.key, l]));
 // '' when fine (empty is fine: links are optional), else a plain message.

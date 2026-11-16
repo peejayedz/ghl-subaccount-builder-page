@@ -9,7 +9,7 @@
 // below; tests/unit/safety.test.mjs checks it), and the client record (through app.js's saveRecord).
 // It never talks to GHL. The passphrase lives in memory only and is never saved by the page.
 
-export const KPI_PAGES = 'https://peejayedz.github.io/leadpro-kpi/';
+export const KPI_PAGES = 'https://dashboard.lawfirmmarketingpros.com/leadpro-kpi/';   // v1.5.0: was peejayedz.github.io (old links still redirect)
 export const slugify = name => String(name || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '');
 export const secretKeyFor = slug => slug.toUpperCase().replace(/-/g, '_');

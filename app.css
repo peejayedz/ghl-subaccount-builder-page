@@ -380,6 +380,7 @@ details.tech pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--pa
 .wntoast li::before{content:"/";position:absolute;left:0;color:var(--acc-ink);font-weight:700}
 .wntoast .btnrow{margin-top:4px}
 .news{display:flex;flex-direction:column;gap:12px}
+.wntoast,.news{overflow-wrap:anywhere}   /* v1.5.0: long addresses (dashboard.lawfirmmarketingpros.com) wrap on phones instead of scrolling sideways */
 .news .seg{align-self:flex-start}
 .vcard{background:var(--panel2);border:1px solid var(--line)}
 .vcard>summary{list-style:none;cursor:pointer;padding:16px 18px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:start}
